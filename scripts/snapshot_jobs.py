@@ -36,32 +36,45 @@ QUERIES = [
 ]
 ADZUNA_COUNTRIES = ["us", "gb", "de", "in", "au"]
 PER_QUERY = 15
-TARGET = 250
+PER_COUNTRY = 42  # balanced quota per country so no single country dominates
+REMOTE_QUOTA = 40  # reserved slots for Remotive remote jobs
 
 
 def collect() -> list[JobPosting]:
+    """Sample a balanced quota per country + a reserved remote slice.
+
+    A naive "gather everything then truncate" biases the cache toward whichever
+    country is fetched first. Instead we cap each country independently and
+    reserve slots for remote roles, so the committed cache spans >=5 countries
+    AND includes remote jobs.
+    """
     jobs: list[JobPosting] = []
 
     adzuna = AdzunaSource()
     if adzuna.available:
         print("Adzuna keys found — pulling international postings.")
         for country in ADZUNA_COUNTRIES:
+            country_jobs: list[JobPosting] = []
             for q in QUERIES:
                 batch = adzuna.fetch(q, location=None, country=country, remote=False, limit=PER_QUERY)
-                print(f"  adzuna/{country} '{q}': {len(batch)}")
-                jobs.extend(batch)
+                country_jobs.extend(batch)
                 time.sleep(0.3)  # be polite to the free tier
+            capped = _dedupe(country_jobs)[:PER_COUNTRY]
+            print(f"  adzuna/{country}: {len(capped)} (from {len(country_jobs)})")
+            jobs.extend(capped)
     else:
         print("No Adzuna keys — skipping (cache will be Remotive-only, all remote).")
 
     remotive = RemotiveSource()
+    remote_jobs: list[JobPosting] = []
     for q in QUERIES:
-        batch = remotive.fetch(q, location=None, country=None, remote=True, limit=PER_QUERY * 3)
-        print(f"  remotive '{q}': {len(batch)}")
-        jobs.extend(batch)
+        remote_jobs.extend(remotive.fetch(q, location=None, country=None, remote=True, limit=PER_QUERY * 3))
         time.sleep(0.3)
+    capped_remote = _dedupe(remote_jobs)[:REMOTE_QUOTA]
+    print(f"  remotive (remote): {len(capped_remote)} (from {len(remote_jobs)})")
+    jobs.extend(capped_remote)
 
-    return _dedupe(jobs)[:TARGET]
+    return _dedupe(jobs)
 
 
 def main() -> None:
