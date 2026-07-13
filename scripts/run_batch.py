@@ -31,8 +31,9 @@ ROOT = Path(__file__).resolve().parent.parent
 CV_DIR = ROOT / "data" / "fixture_cvs"
 REPORT_PATH = ROOT / "reports" / "baseline.json"
 
-# Rough per-run cost for the projection prompt (a run makes ~4-8 gpt-4o-mini calls).
-COST_PER_RUN_ESTIMATE = 0.006
+# Rough per-run cost for the projection prompt. Observed ~$0.02-0.03/run with
+# gpt-4.1-mini ranking 25 jobs in batches (plus reformulation loops).
+COST_PER_RUN_ESTIMATE = 0.025
 
 # 3 English CVs x location variations across >= 4 countries + remote.
 ENGLISH_CVS = ["junior_ds_us.pdf", "senior_mle_eu.pdf", "career_changer_in.pdf"]
@@ -105,12 +106,41 @@ def _fit_distribution(scores: list[int]) -> dict[str, int]:
     return buckets
 
 
-def run(cases: list[Case]) -> dict:
-    rows = []
-    all_scores: list[int] = []
-    latencies: list[float] = []
-    costs: list[float] = []
+def _pctl(values: list[float], p: float) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    k = min(len(s) - 1, int(round(p * (len(s) - 1))))
+    return round(s[k], 3)
 
+
+def summarize(rows: list[dict]) -> dict:
+    all_scores = [s for r in rows for s in r["fit_scores"]]
+    latencies = [r["latency_s"] for r in rows]
+    costs = [r["cost_usd"] for r in rows]
+    return {
+        "runs": len(rows),
+        "failures": sum(1 for r in rows if r["failed"]),
+        "empty_result_runs": sum(1 for r in rows if not r["failed"] and r["n_jobs_ranked"] == 0),
+        "reformulation_triggered": sum(1 for r in rows if r["reformulation_count"] > 0),
+        "latency_mean_s": round(statistics.mean(latencies), 2) if latencies else 0,
+        "latency_median_s": round(statistics.median(latencies), 2) if latencies else 0,
+        "latency_p95_s": _pctl(latencies, 0.95),
+        "cost_mean_usd": round(statistics.mean(costs), 5) if costs else 0,
+        "cost_total_usd": round(sum(costs), 4),
+        "fit_score_distribution": _fit_distribution(all_scores),
+        "fit_score_mean": round(statistics.mean(all_scores), 1) if all_scores else 0,
+    }
+
+
+def _checkpoint(rows: list[dict]) -> None:
+    """Write the report after every run so a long batch is crash-safe."""
+    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    REPORT_PATH.write_text(json.dumps({"summary": summarize(rows), "runs": rows}, indent=2, ensure_ascii=False))
+
+
+def run(cases: list[Case]) -> dict:
+    rows: list[dict] = []
     for i, case in enumerate(cases, 1):
         print(f"[{i}/{len(cases)}] {case.case_id} ({case.note})…", flush=True)
         result = run_once(
@@ -119,10 +149,6 @@ def run(cases: list[Case]) -> dict:
             thread_id=str(uuid4()),
             tags=["phase-1", "baseline-batch"],
         )
-        scores = [r.fit_score for r in result.ranked_jobs]
-        all_scores += scores
-        latencies.append(result.latency_s)
-        costs.append(result.cost_usd)
         rows.append(
             {
                 "case_id": case.case_id,
@@ -136,38 +162,15 @@ def run(cases: list[Case]) -> dict:
                 "n_jobs_ranked": result.n_jobs_ranked,
                 "reformulation_count": result.reformulation_count,
                 "jobs_sources": result.jobs_sources,
-                "fit_scores": scores,
+                "fit_scores": [r.fit_score for r in result.ranked_jobs],
                 "errors": result.errors,
                 "cost_usd": result.cost_usd,
                 "latency_s": result.latency_s,
             }
         )
+        _checkpoint(rows)  # crash-safe: report reflects every completed run
 
-    failures = [r for r in rows if r["failed"]]
-    empty = [r for r in rows if not r["failed"] and r["n_jobs_ranked"] == 0]
-    reformulated = [r for r in rows if r["reformulation_count"] > 0]
-
-    def _pctl(values: list[float], p: float) -> float:
-        if not values:
-            return 0.0
-        s = sorted(values)
-        k = min(len(s) - 1, int(round(p * (len(s) - 1))))
-        return round(s[k], 3)
-
-    summary = {
-        "runs": len(rows),
-        "failures": len(failures),
-        "empty_result_runs": len(empty),
-        "reformulation_triggered": len(reformulated),
-        "latency_mean_s": round(statistics.mean(latencies), 2) if latencies else 0,
-        "latency_median_s": round(statistics.median(latencies), 2) if latencies else 0,
-        "latency_p95_s": _pctl(latencies, 0.95),
-        "cost_mean_usd": round(statistics.mean(costs), 5) if costs else 0,
-        "cost_total_usd": round(sum(costs), 4),
-        "fit_score_distribution": _fit_distribution(all_scores),
-        "fit_score_mean": round(statistics.mean(all_scores), 1) if all_scores else 0,
-    }
-    return {"summary": summary, "runs": rows}
+    return {"summary": summarize(rows), "runs": rows}
 
 
 def print_table(summary: dict) -> None:
@@ -208,9 +211,7 @@ def main() -> None:
         print("\nRe-run with --yes to execute.")
         sys.exit(0)
 
-    report = run(cases)
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    report = run(cases)  # checkpoints REPORT_PATH after every run
     print_table(report["summary"])
     print(f"\nWrote {REPORT_PATH}")
 

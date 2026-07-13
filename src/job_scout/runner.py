@@ -79,7 +79,10 @@ def stream_run(
     settings = get_settings()
     tracer = get_tracer(thread_id, tags)
     usage_cb = UsageMetadataCallbackHandler()
-    callbacks = [usage_cb] + ([tracer] if tracer else [])
+    # track_langgraph already registers the tracer on the wrapped graph — do NOT
+    # also pass it in callbacks, or its run-ID index double-fires ("No indexed
+    # run ID"). Only the usage handler goes through callbacks.
+    callbacks = [usage_cb]
 
     graph = trace_graph(build_graph(), tracer)
     inputs = {"cv_text": cv_text, "selected_job_id": selected_job_id}
