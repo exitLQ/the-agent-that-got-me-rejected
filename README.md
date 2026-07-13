@@ -125,6 +125,26 @@ Extraction, ranking and reformulation run at temperature 0. Some residual
 nondeterminism remains (model updates, tie-breaking). The committed cache and
 pinned dependencies (`uv.lock`) keep the reader's experience stable.
 
+## Conventions
+
+Production-grade engineering, kept deliberately light for a teaching repo.
+**Used here:** `src/` layout with clear layer separation; Pydantic schemas as
+first-class citizens; `pydantic-settings` + `@lru_cache get_settings` +
+`SecretStr`; graph = `nodes/` (functions returning state dicts) + one `graph.py`;
+prompts as Python constants with Opik as a mirror (local constants are the source
+of truth); Opik disabled in tests; `uv` + `[dependency-groups]`, `ruff`
+(line-length 130, `E501` off for prompts, `S`/`B` relaxed in tests),
+`pre-commit`, `pytest` with `MagicMock`-based LLM mocking; self-documenting
+`Makefile`; field-by-field `.env.example`.
+
+**Deliberately kept out** (not needed at this scope): FastAPI /
+routers / services / repositories layering, Postgres `AsyncPostgresSaver` (uses
+`MemorySaver`), Alembic, Docker Compose, strict `mypy`, and async throughout
+(sync is enough for a Gradio generator + sequential batch). Config is a single
+flat `Settings` rather than nested `__` env groups, and models use
+`init_chat_model` (provider-configurable) rather than a directly-constructed
+client.
+
 ## License
 
 MIT.
