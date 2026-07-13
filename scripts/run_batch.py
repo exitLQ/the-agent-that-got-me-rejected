@@ -36,23 +36,24 @@ REPORT_PATH = ROOT / "reports" / "baseline.json"
 COST_PER_RUN_ESTIMATE = 0.025
 
 # 3 English CVs x location variations across >= 4 countries + remote.
+# Ordered diversity-first so a truncated (--limit) run still spans many countries.
 ENGLISH_CVS = ["junior_ds_us.pdf", "senior_mle_eu.pdf", "career_changer_in.pdf"]
 VARIATIONS: list[tuple[str | None, str]] = [
     (None, "no location hint"),
     ("New York, USA", "us"),
-    ("San Francisco, USA", "us"),
     ("London, UK", "uk"),
-    ("Manchester, UK", "uk"),
     ("Berlin, Germany", "de"),
-    ("Munich, Germany", "de"),
     ("Bengaluru, India", "in"),
-    ("Mumbai, India", "in"),
     ("Sydney, Australia", "au"),
-    ("São Paulo, Brazil", "br"),
     ("Remote", "remote-only"),
-    ("Remote worldwide", "remote-only"),
+    ("São Paulo, Brazil", "br"),
     ("Toronto, Canada", "ca"),
     ("Singapore", "sg"),
+    ("San Francisco, USA", "us"),
+    ("Manchester, UK", "uk"),
+    ("Munich, Germany", "de"),
+    ("Mumbai, India", "in"),
+    ("Remote worldwide", "remote-only"),
 ]
 
 
@@ -65,22 +66,25 @@ class Case:
     hard: bool = False
 
 
-def build_matrix() -> list[Case]:
-    cases: list[Case] = []
-    for cv in ENGLISH_CVS:
-        stem = cv.replace(".pdf", "")
-        for hint, note in VARIATIONS:
-            cases.append(Case(f"{stem}|{note}", cv, hint, note))
+HARD_CASES = [
+    Case("hard|non_english_de", "german_pm_de.pdf", None, "non-English (German) CV", hard=True),
+    Case("hard|junior_low_exp", "junior_ds_us.pdf", "Remote", "junior, minimal experience, remote", hard=True),
+    Case("hard|career_changer", "career_changer_in.pdf", "Bengaluru, India", "career changer, thin experience", hard=True),
+    Case("hard|niche_skills", "senior_mle_eu.pdf", None, "very niche senior skill set", hard=True),
+    Case("hard|unmappable_loc", "career_changer_in.pdf", "Atlantis", "location maps to no Adzuna country", hard=True),
+]
 
-    # 5 deliberately hard cases.
-    cases += [
-        Case("hard|non_english_de", "german_pm_de.pdf", None, "non-English (German) CV", hard=True),
-        Case("hard|junior_low_exp", "junior_ds_us.pdf", "Remote", "junior, minimal experience, remote", hard=True),
-        Case("hard|career_changer", "career_changer_in.pdf", "Bengaluru, India", "career changer, thin experience", hard=True),
-        Case("hard|niche_skills", "senior_mle_eu.pdf", None, "very niche senior skill set", hard=True),
-        Case("hard|unmappable_loc", "career_changer_in.pdf", "Atlantis", "location maps to no Adzuna country", hard=True),
-    ]
-    return cases
+
+def build_matrix(limit: int | None = None) -> list[Case]:
+    # Variation-major so CVs rotate and countries spread fast; hard cases first
+    # so any --limit prefix still includes them.
+    regular: list[Case] = []
+    for hint, note in VARIATIONS:
+        for cv in ENGLISH_CVS:
+            stem = cv.replace(".pdf", "")
+            regular.append(Case(f"{stem}|{note}", cv, hint, note))
+    cases = HARD_CASES + regular
+    return cases[:limit] if limit else cases
 
 
 def _cv_text(case: Case) -> str:
@@ -198,9 +202,10 @@ def print_table(summary: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Phase 1 baseline batch runner")
     parser.add_argument("--yes", action="store_true", help="run without the cost confirmation prompt")
+    parser.add_argument("--limit", type=int, default=None, help="cap the number of runs (default: all ~50)")
     args = parser.parse_args()
 
-    cases = build_matrix()
+    cases = build_matrix(limit=args.limit)
     projected = len(cases) * COST_PER_RUN_ESTIMATE
     settings = get_settings()
     print(f"Model: {settings.scout_model}")
