@@ -15,6 +15,15 @@ ability to see inside it: **Build → Evaluate → Self-Improve**.
 > a job hunt is the research and tailoring per application, not clicking submit.
 > That is the part worth automating.
 
+## Architecture
+
+![Job Scout architecture](docs/images/architecture.png)
+
+Your CV becomes a typed profile, then a LangGraph agent lets the model choose how
+to search four job sources, scores the results in batches, and loops (bounded) to
+broaden thin matches. Opik traces all of it. Full walkthrough in
+[`docs/architecture.md`](docs/architecture.md).
+
 ## Key Features
 
 **Core philosophy:** instrument before you optimize. The agent is traced from run
