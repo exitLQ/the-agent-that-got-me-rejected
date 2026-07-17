@@ -1,8 +1,12 @@
-# Job Scout — Phase 1 Architecture
+# Job Scout — Architecture
+
+![Job Scout architecture](images/architecture.png)
 
 Grounded in the current code (`src/job_scout/…`). Renders anywhere Mermaid is
 supported (GitHub, most blog engines). Legend: **solid arrows** = data flow,
 **dotted arrows** = cross-cutting concerns (LLM calls, Opik tracing, config).
+
+The diagram above is also available as editable Mermaid source:
 
 ```mermaid
 flowchart TB
