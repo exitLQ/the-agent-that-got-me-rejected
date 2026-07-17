@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from job_scout.graph import END, should_reformulate
+from job_scout.graph.graph import END, should_reformulate
+from job_scout.graph.schemas import JobPosting, RankedJob
 from job_scout.llm import LLMBudgetExceededError, ensure_budget
-from job_scout.schemas import JobPosting, RankedJob
 
 
 def _ranked(score: int) -> RankedJob:

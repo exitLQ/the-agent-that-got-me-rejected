@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from job_scout.schemas import JobPosting, RankedJob
+from job_scout.graph.schemas import JobPosting, RankedJob
 from tests.conftest import make_job
 
 

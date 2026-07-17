@@ -1,7 +1,4 @@
-"""Prompt for the query-reformulation node.
-
-First-draft quality on purpose (see prompts/__init__.py).
-"""
+"""Prompt for the query-reformulation node (see prompts/__init__.py)."""
 
 REFORMULATE_PROMPT_NAME = "reformulate"
 

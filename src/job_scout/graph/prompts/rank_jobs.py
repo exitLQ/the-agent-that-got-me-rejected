@@ -1,9 +1,8 @@
 """Prompt for the job-ranking node.
 
-THIS is the prompt Phase 3 optimizes. Keep it a plain, honest first attempt:
-clear instructions and the correct output schema, nothing more. Do NOT add
-few-shot examples, chain-of-thought scaffolding, or edge-case handling clauses —
-the optimizer needs measurable headroom. See prompts/__init__.py.
+Maintainer note: this prompt is intentionally left unoptimized (it is the target
+of the Phase 3 prompt optimizer). Keep it to clear instructions and the correct
+output schema — no few-shot examples or chain-of-thought scaffolding.
 """
 
 RANK_JOBS_PROMPT_NAME = "rank_jobs"

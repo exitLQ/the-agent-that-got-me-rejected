@@ -9,14 +9,17 @@ from unittest.mock import MagicMock
 import pytest
 
 # Enforce the offline test environment before anything imports settings.
-os.environ.setdefault("OPIK_ENABLED", "false")
+# Force every network-backed source off so tests never hit an API or spend
+# credits. Empty env vars override any values in a developer's local .env.
+os.environ["OPIK_ENABLED"] = "false"
+os.environ["OPIK_API_KEY"] = ""
+os.environ["ADZUNA_APP_ID"] = ""
+os.environ["ADZUNA_APP_KEY"] = ""
+os.environ["JSEARCH_API_KEY"] = ""
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
-os.environ.setdefault("OPIK_API_KEY", "")
-os.environ.setdefault("ADZUNA_APP_ID", "")
-os.environ.setdefault("ADZUNA_APP_KEY", "")
 
 from job_scout.config import get_settings  # noqa: E402
-from job_scout.schemas import JobPosting, Profile  # noqa: E402
+from job_scout.graph.schemas import JobPosting, Profile  # noqa: E402
 
 FIXTURE_CVS = Path(__file__).resolve().parent.parent / "data" / "fixture_cvs"
 

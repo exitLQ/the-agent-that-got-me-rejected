@@ -2,22 +2,14 @@
 
 from __future__ import annotations
 
-import job_scout.nodes.extract_profile as extract_mod
-import job_scout.nodes.fetch_jobs as fetch_mod
-import job_scout.nodes.rank_jobs as rank_mod
-import job_scout.nodes.reformulate_query as reformulate_mod
-from job_scout.nodes.extract_profile import extract_profile
-from job_scout.nodes.fetch_jobs import fetch_jobs
-from job_scout.nodes.rank_jobs import _JobScore, _JobScores, rank_jobs
-from job_scout.nodes.reformulate_query import reformulate_query
+import job_scout.graph.nodes.fetch_jobs as fetch_mod
+import job_scout.graph.nodes.rank_jobs as rank_mod
+import job_scout.graph.nodes.reformulate_query as reformulate_mod
+from job_scout.graph.nodes.fetch_jobs import fetch_jobs
+from job_scout.graph.nodes.rank_jobs import rank_jobs
+from job_scout.graph.nodes.reformulate_query import reformulate_query
+from job_scout.graph.schemas import JobScore, JobScores
 from tests.conftest import make_job, plain_llm, structured_llm, tool_calling_llm
-
-
-def test_extract_profile(monkeypatch, sample_profile):
-    monkeypatch.setattr(extract_mod, "get_chat_model", lambda *a, **k: structured_llm(sample_profile))
-    out = extract_profile({"cv_text": "some cv", "llm_calls": 0})
-    assert out["profile"] is sample_profile
-    assert out["llm_calls"] == 1
 
 
 def test_fetch_jobs_uses_llm_tool_args(monkeypatch, sample_profile, sample_jobs):
@@ -58,7 +50,7 @@ def test_rank_jobs_batches_by_five(monkeypatch, sample_profile):
             # return a score for whichever ids appear in this batch prompt
             ids = [j.job_id for j in jobs if f"job_id: {j.job_id}\n" in prompt]
             calls.append(len(ids))
-            return _JobScores(scores=[_JobScore(job_id=i, fit_score=80, fit_explanation="ok") for i in ids])
+            return JobScores(scores=[JobScore(job_id=i, fit_score=80, fit_explanation="ok") for i in ids])
 
         llm.with_structured_output.return_value.invoke.side_effect = invoke
         return llm

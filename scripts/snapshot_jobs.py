@@ -20,7 +20,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from job_scout.schemas import JobPosting
+from job_scout.graph.schemas import JobPosting
 from job_scout.tools.jobs_api import AdzunaSource, RemotiveSource, _dedupe
 
 OUT_PATH = Path(__file__).resolve().parent.parent / "data" / "cached_jobs.json"

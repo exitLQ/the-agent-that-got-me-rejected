@@ -1,12 +1,11 @@
-"""Opik instrumentation — the core lesson of Phase 1.
+"""Opik instrumentation: tracing, CV attachments, and the prompt registry.
 
 Every run (UI or batch) is traced: a span tree per graph node, the agent graph
-visualization, per-run cost, and the uploaded CV attached to the trace so the
-Phase 2 PDF-aware judge can reason over it.
+visualization, per-run cost, and the uploaded CV attached to the trace.
 
 Everything here is offline-safe: with ``OPIK_ENABLED=false`` or no API key, the
-functions degrade to no-ops and return ``None``, so tests and keyless runs work.
-The local prompt constants remain the source of truth; Opik mirrors them.
+functions degrade to no-ops, so tests and keyless runs work. The local prompt
+constants remain the source of truth; Opik mirrors them.
 """
 
 from __future__ import annotations
@@ -17,9 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from job_scout.config import get_settings
-from job_scout.prompts.extract_profile import EXTRACT_PROFILE_PROMPT, EXTRACT_PROFILE_PROMPT_NAME
-from job_scout.prompts.rank_jobs import RANK_JOBS_PROMPT, RANK_JOBS_PROMPT_NAME
-from job_scout.prompts.reformulate import REFORMULATE_PROMPT, REFORMULATE_PROMPT_NAME
+from job_scout.graph.prompts.rank_jobs import RANK_JOBS_PROMPT, RANK_JOBS_PROMPT_NAME
+from job_scout.graph.prompts.reformulate import REFORMULATE_PROMPT, REFORMULATE_PROMPT_NAME
+from job_scout.profile import EXTRACT_PROFILE_PROMPT, EXTRACT_PROFILE_PROMPT_NAME
 
 _CONFIGURED = False
 
@@ -138,10 +137,15 @@ def register_prompts() -> int:
         return 0
     import opik
 
+    client = opik.Opik()
+    project = get_settings().opik_project_name
     count = 0
     for name, text in _PROMPTS:
         try:
-            opik.Prompt(name=name, prompt=text, validate_placeholders=False)
+            # project_name scopes the prompt to the project so it shows in the
+            # project's Prompt library view; without it prompts are workspace-
+            # level (project_id=None) and the project-scoped UI hides them.
+            client.create_prompt(name=name, prompt=text, project_name=project)
             count += 1
         except Exception:  # noqa: BLE001, S110 - never block a run on prompt sync
             pass

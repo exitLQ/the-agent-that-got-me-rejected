@@ -1,7 +1,7 @@
-"""Runner contract: every invocation passes selected_job_id explicitly.
+"""Runner contract: the search always passes selected_job_id explicitly.
 
-This is the state-reset guarantee from the spec — a fresh CV must never route
-into stale Phase-2 tailoring state on a reused checkpointer thread.
+This is the state-reset guarantee from the spec — a run must never route into
+stale Phase-2 tailoring state on a reused checkpointer thread.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import job_scout.runner as runner_mod
-from job_scout.runner import run_once, stream_run
+from job_scout.runner import run_once, stream_search
 
 
 class _FakeGraph:
@@ -24,28 +24,29 @@ class _FakeGraph:
         return SimpleNamespace(values={"profile": None, "ranked_jobs": [], "jobs_sources": ["cache"]})
 
 
-def test_upload_passes_selected_job_id_none(monkeypatch):
-    fake = _FakeGraph()
+def _patch(monkeypatch, fake):
     monkeypatch.setattr(runner_mod, "build_graph", lambda: fake)
     monkeypatch.setattr(runner_mod, "trace_graph", lambda g, t: g)
     monkeypatch.setattr(runner_mod, "get_tracer", lambda *a, **k: None)
+
+
+def test_search_passes_profile_and_nulls_selected_job_id(monkeypatch, sample_profile):
+    fake = _FakeGraph()
+    _patch(monkeypatch, fake)
+    monkeypatch.setattr(runner_mod, "extract_profile", lambda *a, **k: sample_profile)
 
     run_once("cv text here", thread_id="t1", tags=["batch"])
 
-    assert "selected_job_id" in fake.captured_inputs
+    assert fake.captured_inputs["profile"] is sample_profile
     assert fake.captured_inputs["selected_job_id"] is None
-    assert fake.captured_inputs["cv_text"] == "cv text here"
 
 
-def test_stream_run_yields_result(monkeypatch):
+def test_stream_search_yields_result(monkeypatch, sample_profile):
     fake = _FakeGraph()
-    monkeypatch.setattr(runner_mod, "build_graph", lambda: fake)
-    monkeypatch.setattr(runner_mod, "trace_graph", lambda g, t: g)
-    monkeypatch.setattr(runner_mod, "get_tracer", lambda *a, **k: None)
+    _patch(monkeypatch, fake)
 
-    events = list(stream_run("cv", thread_id="t1", tags=["ui"]))
-    kinds = [k for k, _ in events]
-    assert kinds[-1] == "result"
+    events = list(stream_search(sample_profile, thread_id="t1", tags=["ui"]))
+    assert events[-1][0] == "result"
     result = events[-1][1]
     assert result.jobs_sources == ["cache"]
     assert result.failed is False

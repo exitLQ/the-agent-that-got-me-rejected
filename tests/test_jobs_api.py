@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import httpx
+
 from job_scout.tools.jobs_api import (
     AdzunaSource,
     CacheSource,
+    JSearchSource,
     location_to_country,
     run_search,
 )
@@ -83,6 +86,64 @@ def test_result_cap():
     adzuna = _fake_source("adzuna", many)
     jobs, _ = run_search("ds", limit=25, adzuna=adzuna, remotive=_fake_source("r", []), cache=_fake_source("c", []))
     assert len(jobs) == 25
+
+
+def test_jsearch_unavailable_without_key():
+    src = JSearchSource(api_key="")
+    assert src.available is False
+    assert src.fetch("data scientist", "Berlin", "de", False, 10) == []
+
+
+def test_jsearch_builds_location_query_and_maps_fields(respx_mock):
+    payload = {
+        "data": {
+            "cursor": "next-page-token",
+            "jobs": [
+                {
+                    "job_id": "abc",
+                    "job_title": "Data Scientist",
+                    "employer_name": "Acme GmbH",
+                    "job_location": "Berlin • über Stepstone",
+                    "job_city": None,
+                    "job_country": None,
+                    "job_is_remote": False,
+                    "job_description": "python and sql",
+                    "job_apply_link": "https://example.com/apply",
+                    "job_employment_type": "FULLTIME",
+                }
+            ],
+        }
+    }
+    route = respx_mock.get("https://api.openwebninja.com/jsearch/search-v2").mock(return_value=httpx.Response(200, json=payload))
+    src = JSearchSource(api_key="test-key")
+    jobs = src.fetch("data scientist", "Berlin, Germany", "de", False, 10)
+    # location folded into the query, country passed through
+    sent = route.calls.last.request
+    assert "in Berlin, Germany" in sent.url.params["query"]
+    assert sent.url.params["country"] == "de"
+    assert sent.headers["X-API-Key"] == "test-key"
+    # fields mapped; publisher attribution stripped from location
+    assert jobs[0].title == "Data Scientist"
+    assert jobs[0].company == "Acme GmbH"
+    assert jobs[0].location == "Berlin"
+    assert jobs[0].source == "jsearch"
+
+
+def test_jsearch_primary_when_available():
+    jsearch = MagicMock()
+    jsearch.available = True
+    jsearch.fetch.return_value = [make_job(f"js{i}", f"Role {i}", f"Co{i}", "jsearch") for i in range(6)]
+    adzuna = _fake_source("adzuna", [make_job("a1", "X", "Y", "adzuna")])
+    jobs, used = run_search(
+        "ds",
+        location="Berlin",
+        jsearch=jsearch,
+        adzuna=adzuna,
+        remotive=_fake_source("r", []),
+        cache=_fake_source("c", []),
+    )
+    assert used == ["jsearch"]
+    adzuna.fetch.assert_not_called()  # JSearch returned enough; Adzuna skipped
 
 
 def test_cache_source_keyword_match(tmp_path):

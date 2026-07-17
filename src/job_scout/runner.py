@@ -1,9 +1,8 @@
-"""Shared run orchestration used by both the Gradio app and the batch runner.
+"""Run orchestration shared by the Gradio app and the batch runner.
 
-Centralizes: building the tracer, wrapping the graph, streaming node-level
-status, measuring cost + latency locally (so the footer works even offline), and
-attaching the CV to the trace. Keeping this in one place means the UI and batch
-paths cannot drift apart.
+One place builds the tracer, wraps the graph, streams node-level status, measures
+cost and latency, and attaches the CV to the trace, so the UI and batch paths
+cannot drift apart.
 """
 
 from __future__ import annotations
@@ -16,20 +15,17 @@ from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 from job_scout.config import get_settings
 from job_scout.graph import build_graph
-from job_scout.schemas import Profile, RankedJob
+from job_scout.graph.schemas import Profile, RankedJob
+from job_scout.profile import extract_profile
 from job_scout.tracing import attach_cv, get_tracer, opik_url, trace_graph
 
-# USD per 1M tokens, for the local footer estimate. Opik is the source of truth
-# in the dashboard; this table just powers the immediate footer number.
-_PRICES: dict[str, tuple[float, float]] = {
+_PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.50, 10.00),
     "gpt-4.1-mini": (0.40, 1.60),
 }
 
-# Human-readable status per node, streamed to the UI.
 _NODE_STATUS = {
-    "extract_profile": "extracting profile…",
     "fetch_jobs": "searching jobs…",
     "rank_jobs": "ranking jobs…",
     "reformulate_query": "broadening the search…",
@@ -38,6 +34,8 @@ _NODE_STATUS = {
 
 @dataclass
 class RunResult:
+    """The outcome of one agent run: results plus display/observability fields."""
+
     profile: Profile | None = None
     ranked_jobs: list[RankedJob] = field(default_factory=list)
     jobs_sources: list[str] = field(default_factory=list)
@@ -53,8 +51,8 @@ class RunResult:
 
 
 def _estimate_cost(usage: dict, model: str) -> float:
-    key = model.split(":", 1)[-1]
-    in_price, out_price = _PRICES.get(key, (0.0, 0.0))
+    """Estimate USD cost from token usage, for the footer (Opik has the exact figure)."""
+    in_price, out_price = _PRICES_PER_MTOK.get(model.split(":", 1)[-1], (0.0, 0.0))
     total = 0.0
     for stats in usage.values():
         total += stats.get("input_tokens", 0) / 1_000_000 * in_price
@@ -62,45 +60,38 @@ def _estimate_cost(usage: dict, model: str) -> float:
     return round(total, 6)
 
 
-def stream_run(
-    cv_text: str,
+def stream_search(
+    profile: Profile,
     *,
+    cv_text: str = "",
     cv_path: str | None = None,
     thread_id: str,
     tags: list[str],
     selected_job_id: str | None = None,
 ) -> Iterator[tuple[str, object]]:
-    """Run the agent, yielding ``("status", msg)`` updates then ``("result", RunResult)``.
+    """Run the job-finding graph for an already-extracted profile.
 
-    The upload contract is honoured here: ``selected_job_id`` is passed
-    explicitly (default ``None``) on every invocation, so a fresh CV never routes
-    into stale Phase-2 tailoring state on a reused thread.
+    Yields ``("status", msg)`` per node and finally ``("result", RunResult)``.
+    ``selected_job_id`` is passed explicitly on every invocation (default ``None``)
+    so a run never routes into stale Phase 2 tailoring on a reused thread.
     """
     settings = get_settings()
     tracer = get_tracer(thread_id, tags)
     usage_cb = UsageMetadataCallbackHandler()
-    # track_langgraph already registers the tracer on the wrapped graph — do NOT
-    # also pass it in callbacks, or its run-ID index double-fires ("No indexed
-    # run ID"). Only the usage handler goes through callbacks.
+    # track_langgraph already registers the tracer on the graph; passing it in
+    # callbacks too would double-fire its run-ID index.
     callbacks = [usage_cb]
 
     graph = trace_graph(build_graph(), tracer)
-    inputs = {"cv_text": cv_text, "selected_job_id": selected_job_id}
+    inputs = {"profile": profile, "cv_text": cv_text, "selected_job_id": selected_job_id}
     config = {"configurable": {"thread_id": thread_id}, "callbacks": callbacks, "recursion_limit": 25}
 
-    result = RunResult(opik_url=opik_url())
+    result = RunResult(opik_url=opik_url(), profile=profile)
     start = time.monotonic()
     try:
         for chunk in graph.stream(inputs, config=config, stream_mode="updates"):
             for node_name, update in chunk.items():
-                status = _NODE_STATUS.get(node_name, f"{node_name}…")
-                if node_name == "fetch_jobs":
-                    n = len(update.get("jobs", []))
-                    attempt = update.get("reformulation_count", 0) + 1
-                    status = f"searching jobs (attempt {attempt})… {n} found"
-                elif node_name == "rank_jobs":
-                    status = f"ranking {len(update.get('ranked_jobs', []))} jobs…"
-                yield ("status", status)
+                yield ("status", _status_line(node_name, update))
 
         final = graph.get_state(config).values
         result.profile = final.get("profile")
@@ -110,7 +101,7 @@ def stream_run(
         result.n_jobs_fetched = len(final.get("jobs", []))
         result.n_jobs_ranked = len(result.ranked_jobs)
         result.errors = final.get("errors", [])
-    except Exception as exc:  # noqa: BLE001 - surface as a failed run, keep the trace
+    except Exception as exc:  # noqa: BLE001 - report as a failed run, keep the trace
         result.failed = True
         result.error_message = f"{type(exc).__name__}: {exc}"
     finally:
@@ -124,16 +115,24 @@ def stream_run(
     yield ("result", result)
 
 
-def run_once(
-    cv_text: str,
-    *,
-    cv_path: str | None = None,
-    thread_id: str,
-    tags: list[str],
-) -> RunResult:
-    """Non-streaming convenience wrapper (used by the batch runner)."""
+def _status_line(node_name: str, update: dict) -> str:
+    """Human-readable progress line for a completed node."""
+    if node_name == "fetch_jobs":
+        attempt = update.get("reformulation_count", 0) + 1
+        return f"searching jobs (attempt {attempt})… {len(update.get('jobs', []))} found"
+    if node_name == "rank_jobs":
+        return f"ranking {len(update.get('ranked_jobs', []))} jobs…"
+    return _NODE_STATUS.get(node_name, f"{node_name}…")
+
+
+def run_once(cv_text: str, *, cv_path: str | None = None, thread_id: str, tags: list[str]) -> RunResult:
+    """Extract the profile then run the job search, returning the final result.
+
+    Used by the batch runner, which starts from raw CV text.
+    """
+    profile = extract_profile(cv_text, thread_id=thread_id, tags=tags)
     result = RunResult()
-    for kind, payload in stream_run(cv_text, cv_path=cv_path, thread_id=thread_id, tags=tags):
+    for kind, payload in stream_search(profile, cv_text=cv_text, cv_path=cv_path, thread_id=thread_id, tags=tags):
         if kind == "result":
             result = payload  # type: ignore[assignment]
     return result

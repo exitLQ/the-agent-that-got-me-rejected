@@ -1,11 +1,10 @@
-"""Shared LLM helpers: model factory and the per-run call budget.
+"""Chat-model factory and the per-run LLM call budget.
 
-The budget is a deliberately visible circuit breaker. Each node reads the
-running ``llm_calls`` counter from state, checks it will not exceed
-``MAX_LLM_CALLS_PER_RUN`` before calling the model, and returns the incremented
-total. Because the graph runs sequentially (no parallel supersteps), the plain
-overwrite reducer on ``llm_calls`` is correct as long as nodes return the
-cumulative total, not a delta.
+The call budget is a simple circuit breaker: every node reads the running
+``llm_calls`` counter from state, checks it against ``MAX_LLM_CALLS_PER_RUN``
+before calling the model, and returns the incremented total. The graph runs
+sequentially, so returning the cumulative total (not a delta) keeps the counter
+correct.
 """
 
 from __future__ import annotations
@@ -18,36 +17,34 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from job_scout.config import get_settings
 
-# Which env var each provider's client reads its key from. pydantic-settings
-# loads .env into the Settings object but does NOT export to os.environ, so we
-# bridge the key across here before constructing the model.
-_PROVIDER_KEY_ENV = {"openai": "OPENAI_API_KEY", "groq": "GROQ_API_KEY"}
-
 
 class LLMBudgetExceededError(RuntimeError):
-    """Raised when a run would exceed MAX_LLM_CALLS_PER_RUN."""
+    """Raised when a run would exceed ``MAX_LLM_CALLS_PER_RUN``."""
 
 
-def _ensure_provider_key(model: str) -> None:
-    provider = model.split(":", 1)[0]
-    env_var = _PROVIDER_KEY_ENV.get(provider)
-    if not env_var or os.environ.get(env_var):
+def _export_openai_key() -> None:
+    """Copy the OpenAI key from settings into the environment for LangChain.
+
+    ``pydantic-settings`` reads ``.env`` into the ``Settings`` object but does not
+    export to ``os.environ``, which is where the OpenAI client looks for its key.
+    """
+    if os.environ.get("OPENAI_API_KEY"):
         return
-    settings = get_settings()
-    key = settings.openai_api_key if provider == "openai" else None
-    if key and key.get_secret_value():
-        os.environ[env_var] = key.get_secret_value()
+    key = get_settings().openai_api_key.get_secret_value()
+    if key:
+        os.environ["OPENAI_API_KEY"] = key
 
 
 @lru_cache(maxsize=8)
 def get_chat_model(model: str, temperature: float = 0.0) -> BaseChatModel:
-    """Return a cached chat model for ``model`` (a LangChain provider string)."""
-    _ensure_provider_key(model)
+    """Return a cached chat model for a LangChain provider string (e.g. ``openai:gpt-4o-mini``)."""
+    if model.startswith("openai:"):
+        _export_openai_key()
     return init_chat_model(model, temperature=temperature)
 
 
 def ensure_budget(current_calls: int, planned: int, max_calls: int) -> None:
-    """Raise ``LLMBudgetExceededError`` if the next calls would blow the budget."""
+    """Raise ``LLMBudgetExceededError`` if ``planned`` more calls would exceed ``max_calls``."""
     if current_calls + planned > max_calls:
         raise LLMBudgetExceededError(
             f"Run would make {current_calls + planned} LLM calls, exceeding MAX_LLM_CALLS_PER_RUN={max_calls}."

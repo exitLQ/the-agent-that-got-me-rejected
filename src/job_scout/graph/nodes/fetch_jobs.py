@@ -1,10 +1,8 @@
-"""Node: an LLM with the search_jobs tool bound decides the search arguments.
+"""Fetch jobs via an LLM that chooses the ``search_jobs`` arguments.
 
-This is the tool-usage lesson: the LLM reads the profile and *chooses* the query
-string, country and remote flag (sometimes suboptimally — that is deliberate
-trace material). We then execute the search with those arguments and land the
-results in state. On a reformulation loop the reformulated query is passed as
-strong guidance and the LLM issues a fresh tool call.
+The LLM reads the profile and selects the query, country and remote flag; the
+search runs with those arguments and the results land in state. On a
+reformulation loop the reformulated query is passed as guidance for a fresh call.
 """
 
 from __future__ import annotations
@@ -12,24 +10,30 @@ from __future__ import annotations
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from job_scout.config import get_settings
+from job_scout.graph.schemas import JobPosting
+from job_scout.graph.state import AgentState
 from job_scout.llm import ensure_budget, get_chat_model
-from job_scout.schemas import AgentState, JobPosting
 from job_scout.tools.jobs_api import run_search, search_jobs
 
 CAP = 25
 
 _SYSTEM = (
-    "You are a job search assistant. Call the search_jobs tool exactly once with "
-    "good arguments for this candidate. Choose a query, an optional country code, "
-    "and whether to include remote roles."
+    "You are a job search assistant. Call the search_jobs tool exactly once. "
+    "Build the query around the candidate's most recent and most relevant "
+    "experience — their current or latest role and strongest skills, at the right "
+    "seniority — rather than a broad catch-all or an older, adjacent role. "
+    "Pick a country code from their location and set the remote flag from their preference."
 )
 
 
 def _build_prompt(state: AgentState) -> str:
+    """Describe the candidate to the LLM, adding reformulation guidance if looping."""
     profile = state["profile"]
     lines = [
-        f"Candidate roles: {', '.join(profile.primary_roles) or 'unknown'}",
-        f"Skills: {', '.join(profile.skills[:15])}",
+        f"Seniority: {profile.seniority}",
+        f"Recent / primary roles: {', '.join(profile.primary_roles) or 'unknown'}",
+        f"Key skills: {', '.join(profile.skills[:15])}",
+        f"Summary: {profile.raw_summary or 'n/a'}",
         f"Locations: {', '.join(profile.locations) or 'unknown'}",
         f"Open to remote: {profile.remote_ok}",
     ]
@@ -42,6 +46,7 @@ def _build_prompt(state: AgentState) -> str:
 
 
 def fetch_jobs(state: AgentState) -> dict:
+    """Run the job search with LLM-chosen arguments and merge results into state."""
     settings = get_settings()
     calls = state.get("llm_calls", 0)
     ensure_budget(calls, 1, settings.max_llm_calls_per_run)
@@ -59,8 +64,6 @@ def fetch_jobs(state: AgentState) -> dict:
         country = args.get("country")
         remote = bool(args.get("remote", profile.remote_ok))
     else:
-        # Honest first-draft behaviour: the model didn't call the tool. Fall back
-        # to profile-derived defaults and record it for the trace/findings.
         errors.append("fetch_jobs: LLM issued no tool call; used profile-derived query")
         query = " ".join(profile.primary_roles[:2]) or " ".join(profile.skills[:3])
         country = None

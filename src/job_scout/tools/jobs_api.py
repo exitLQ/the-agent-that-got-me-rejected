@@ -1,15 +1,13 @@
-"""Jobs search: a single LangChain tool over three pluggable sources.
+"""Job search exposed to the agent as a single ``search_jobs`` tool.
 
-The agent sees exactly one tool, ``search_jobs``. Internally it fans out to
-``JobSource`` adapters, tried in order and merged:
+Behind the tool, ``run_search`` fans out to pluggable ``JobSource`` adapters and
+merges their results:
 
-  1. AdzunaSource   - primary; official API, ~20 countries, needs free keys.
-  2. RemotiveSource - keyless worldwide remote jobs; queried when the candidate
-                      is remote-friendly or Adzuna returned too few results.
-  3. CacheSource    - committed offline dataset; the safety net on any network
-                      error, missing keys, or when live sources are too thin.
+    JSearch → Adzuna → Remotive → committed cache
 
-No scraping sources, ever (see docs/extending_sources.md).
+Each adapter is tried only if the ones before it returned too few jobs, so a
+reader with no API keys still gets results from the offline cache. No scraping
+sources are included (see ``docs/extending_sources.md``).
 """
 
 from __future__ import annotations
@@ -23,52 +21,27 @@ import httpx
 from langchain_core.tools import tool
 
 from job_scout.config import get_settings
-from job_scout.schemas import JobPosting
+from job_scout.graph.schemas import JobPosting
 
 DESCRIPTION_LIMIT = 4000
 DEFAULT_LIMIT = 25
+DEFAULT_COUNTRY = "us"
 CACHE_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data" / "cached_jobs.json"
 
-# Country name / location keyword -> Adzuna country code.
 _COUNTRY_CODES: dict[str, str] = {
-    "united states": "us",
-    "usa": "us",
-    "us": "us",
-    "america": "us",
-    "united kingdom": "gb",
-    "uk": "gb",
-    "england": "gb",
-    "london": "gb",
-    "germany": "de",
-    "deutschland": "de",
-    "berlin": "de",
-    "munich": "de",
-    "münchen": "de",
-    "india": "in",
-    "bengaluru": "in",
-    "bangalore": "in",
-    "mumbai": "in",
-    "delhi": "in",
-    "australia": "au",
-    "sydney": "au",
-    "melbourne": "au",
-    "brazil": "br",
-    "brasil": "br",
-    "são paulo": "br",
-    "sao paulo": "br",
-    "canada": "ca",
-    "france": "fr",
-    "spain": "es",
-    "netherlands": "nl",
-    "singapore": "sg",
-    "poland": "pl",
-    "italy": "it",
-}
-DEFAULT_COUNTRY = "us"
+    "united states": "us", "usa": "us", "us": "us", "america": "us",
+    "united kingdom": "gb", "uk": "gb", "england": "gb", "london": "gb",
+    "germany": "de", "deutschland": "de", "berlin": "de", "munich": "de", "münchen": "de",
+    "india": "in", "bengaluru": "in", "bangalore": "in", "mumbai": "in", "delhi": "in",
+    "australia": "au", "sydney": "au", "melbourne": "au",
+    "brazil": "br", "brasil": "br", "são paulo": "br", "sao paulo": "br",
+    "canada": "ca", "france": "fr", "spain": "es", "netherlands": "nl",
+    "singapore": "sg", "poland": "pl", "italy": "it",
+}  # fmt: skip
 
 
 def location_to_country(location: str | None) -> str:
-    """Map a free-text location to an Adzuna country code (default ``us``)."""
+    """Map a free-text location to a two-letter country code (default ``us``)."""
     if not location:
         return DEFAULT_COUNTRY
     loc = location.strip().lower()
@@ -79,25 +52,93 @@ def location_to_country(location: str | None) -> str:
 
 
 def _truncate(text: str) -> str:
+    """Cap a description at ``DESCRIPTION_LIMIT`` characters."""
     return (text or "")[:DESCRIPTION_LIMIT]
 
 
-# --- Source protocol ---------------------------------------------------------
-
-
 class JobSource(Protocol):
-    """A pluggable jobs backend. Adapters must not raise on network errors —
-    they return an empty list so the orchestrator can fall through to cache."""
+    """A pluggable jobs backend.
+
+    Adapters must never raise on a network or parse error; they return an empty
+    list so ``run_search`` can fall through to the next source.
+    """
 
     name: str
 
-    def fetch(self, query: str, location: str | None, country: str | None, remote: bool, limit: int) -> list[JobPosting]: ...
+    def fetch(self, query: str, location: str | None, country: str | None, remote: bool, limit: int) -> list[JobPosting]:
+        """Return postings matching the query, or an empty list on any failure."""
+        ...
 
 
-# --- Adzuna ------------------------------------------------------------------
+class JSearchSource:
+    """Official Google-for-Jobs aggregator (OpenWeb Ninja) with city-level search.
+
+    Location is honoured deterministically: the location is folded into the query
+    (``"<query> in <location>"``) and the country code is derived from it, so a
+    Berlin CV returns Berlin jobs regardless of how the query was phrased.
+    """
+
+    name = "jsearch"
+    BASE = "https://api.openwebninja.com/jsearch/search-v2"
+
+    def __init__(self, api_key: str = "", timeout: float = 15.0) -> None:
+        self.api_key = api_key or get_settings().jsearch_api_key.get_secret_value()
+        self.timeout = timeout
+
+    @property
+    def available(self) -> bool:
+        """Whether an API key is configured."""
+        return bool(self.api_key)
+
+    def fetch(self, query: str, location: str | None, country: str | None, remote: bool, limit: int) -> list[JobPosting]:
+        """Fetch one page (10 results = 1 request credit; the free tier is small)."""
+        if not self.available:
+            return []
+        params: dict[str, object] = {
+            "query": f"{query} in {location}" if location else query,
+            "country": country or location_to_country(location),
+            "num_pages": 1,
+        }
+        if remote:
+            params["work_from_home"] = "true"
+        try:
+            resp = httpx.get(self.BASE, params=params, headers={"X-API-Key": self.api_key}, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError):
+            return []
+        payload = data.get("data")
+        rows = payload.get("jobs") if isinstance(payload, dict) else payload if isinstance(payload, list) else []
+        return [self._to_posting(r) for r in (rows or [])[:limit]]
+
+    @staticmethod
+    def _clean_location(r: dict) -> str:
+        """Extract the location from JSearch, dropping the ``• via <publisher>`` suffix."""
+        raw = (r.get("job_location") or "").split("•")[0].strip()
+        if raw:
+            return raw
+        parts = [r.get("job_city"), r.get("job_state"), r.get("job_country")]
+        return ", ".join(p for p in parts if p) or "Unspecified"
+
+    @staticmethod
+    def _to_posting(r: dict) -> JobPosting:
+        """Convert one JSearch result into a ``JobPosting``."""
+        return JobPosting(
+            job_id=f"jsearch-{r.get('job_id') or r.get('id', '')}",
+            title=(r.get("job_title") or "").strip() or "Untitled",
+            company=(r.get("employer_name") or "").strip() or "Unknown",
+            location=JSearchSource._clean_location(r),
+            remote=bool(r.get("job_is_remote")),
+            description=_truncate(r.get("job_description") or ""),
+            url=r.get("job_apply_link") or "",
+            tags=[t for t in [r.get("job_employment_type"), r.get("job_publisher")] if t],
+            source="jsearch",
+        )
 
 
 class AdzunaSource:
+    """Free official jobs API covering ~20 countries; needs an app id and key."""
+
     name = "adzuna"
     BASE = "https://api.adzuna.com/v1/api/jobs"
 
@@ -109,13 +150,14 @@ class AdzunaSource:
 
     @property
     def available(self) -> bool:
+        """Whether both credentials are configured."""
         return bool(self.app_id and self.app_key)
 
     def fetch(self, query: str, location: str | None, country: str | None, remote: bool, limit: int) -> list[JobPosting]:
+        """Fetch postings for one country (derived from ``country`` or the location)."""
         if not self.available:
             return []
         code = country or location_to_country(location)
-        url = f"{self.BASE}/{code}/search/1"
         params = {
             "app_id": self.app_id,
             "app_key": self.app_key,
@@ -126,7 +168,7 @@ class AdzunaSource:
         if location:
             params["where"] = location
         try:
-            resp = httpx.get(url, params=params, timeout=self.timeout)
+            resp = httpx.get(f"{self.BASE}/{code}/search/1", params=params, timeout=self.timeout)
             resp.raise_for_status()
             data = resp.json()
         except (httpx.HTTPError, json.JSONDecodeError, ValueError):
@@ -135,6 +177,7 @@ class AdzunaSource:
 
     @staticmethod
     def _to_posting(r: dict, code: str) -> JobPosting:
+        """Convert one Adzuna result into a ``JobPosting``."""
         loc = (r.get("location") or {}).get("display_name") or code.upper()
         return JobPosting(
             job_id=f"adzuna-{r.get('id', '')}",
@@ -149,10 +192,9 @@ class AdzunaSource:
         )
 
 
-# --- Remotive ----------------------------------------------------------------
-
-
 class RemotiveSource:
+    """Keyless API of worldwide remote jobs."""
+
     name = "remotive"
     BASE = "https://remotive.com/api/remote-jobs"
 
@@ -160,6 +202,7 @@ class RemotiveSource:
         self.timeout = timeout
 
     def fetch(self, query: str, location: str | None, country: str | None, remote: bool, limit: int) -> list[JobPosting]:
+        """Fetch remote postings matching the query."""
         try:
             resp = httpx.get(self.BASE, params={"search": query, "limit": limit}, timeout=self.timeout)
             resp.raise_for_status()
@@ -170,6 +213,7 @@ class RemotiveSource:
 
     @staticmethod
     def _to_posting(r: dict) -> JobPosting:
+        """Convert one Remotive result into a ``JobPosting``."""
         return JobPosting(
             job_id=f"remotive-{r.get('id', '')}",
             title=r.get("title", "").strip() or "Untitled",
@@ -183,16 +227,16 @@ class RemotiveSource:
         )
 
 
-# --- Cache -------------------------------------------------------------------
-
-
 class CacheSource:
+    """Offline fallback: keyword search over the committed ``cached_jobs.json``."""
+
     name = "cache"
 
     def __init__(self, path: Path = CACHE_PATH) -> None:
         self.path = path
 
     def _load(self) -> list[dict]:
+        """Load the cached postings, or an empty list if the file is missing/invalid."""
         if not self.path.exists():
             return []
         try:
@@ -201,28 +245,23 @@ class CacheSource:
             return []
 
     def fetch(self, query: str, location: str | None, country: str | None, remote: bool, limit: int) -> list[JobPosting]:
-        rows = self._load()
+        """Rank cached postings by how many query terms they contain."""
         terms = [t for t in re.split(r"\W+", query.lower()) if t]
         scored: list[tuple[int, dict]] = []
-        for row in rows:
+        for row in self._load():
             haystack = f"{row.get('title', '')} {row.get('description', '')} {' '.join(row.get('tags', []))}".lower()
-            score = sum(1 for t in terms if t in haystack)
-            if remote and row.get("remote"):
-                score += 1
+            score = sum(1 for t in terms if t in haystack) + (1 if remote and row.get("remote") else 0)
             if score > 0 or not terms:
                 scored.append((score, row))
         scored.sort(key=lambda s: s[0], reverse=True)
-        out = []
-        for _, row in scored[:limit]:
-            row = {**row, "source": "cache", "description": _truncate(row.get("description", ""))}
-            out.append(JobPosting(**row))
-        return out
-
-
-# --- Orchestration -----------------------------------------------------------
+        return [
+            JobPosting(**{**row, "source": "cache", "description": _truncate(row.get("description", ""))})
+            for _, row in scored[:limit]
+        ]
 
 
 def _dedupe(jobs: list[JobPosting]) -> list[JobPosting]:
+    """Drop jobs sharing a ``(title, company)`` with an earlier one."""
     seen: set[tuple[str, str]] = set()
     out: list[JobPosting] = []
     for job in jobs:
@@ -240,17 +279,18 @@ def run_search(
     remote: bool = False,
     limit: int = DEFAULT_LIMIT,
     *,
+    jsearch: JSearchSource | None = None,
     adzuna: AdzunaSource | None = None,
     remotive: RemotiveSource | None = None,
     cache: CacheSource | None = None,
 ) -> tuple[list[JobPosting], list[str]]:
-    """Run the search across sources and return ``(jobs, sources_used)``.
+    """Search across the sources in order and return ``(jobs, sources_used)``.
 
-    Order: Adzuna (primary) → Remotive (when remote-friendly or Adzuna thin) →
-    Cache (when the combined live result is still < 3, or nothing else ran).
-    Results are merged, deduped by ``(title, company)`` and capped at ``limit``.
-    The ``sources_used`` list is recorded into trace metadata.
+    A source is only queried if the previous ones returned too few jobs. Results
+    are merged, deduped by ``(title, company)`` and capped at ``limit``. The
+    sources are injectable for testing. ``sources_used`` goes into trace metadata.
     """
+    jsearch = jsearch or JSearchSource()
     adzuna = adzuna or AdzunaSource()
     remotive = remotive or RemotiveSource()
     cache = cache or CacheSource()
@@ -258,27 +298,22 @@ def run_search(
     jobs: list[JobPosting] = []
     used: list[str] = []
 
-    adzuna_jobs = adzuna.fetch(query, location, country, remote, limit)
-    if adzuna_jobs:
-        used.append("adzuna")
-        jobs.extend(adzuna_jobs)
+    def add(source_name: str, found: list[JobPosting]) -> None:
+        """Record a source's results if it returned any."""
+        if found:
+            used.append(source_name)
+            jobs.extend(found)
 
-    if remote or len(adzuna_jobs) < 5:
-        remotive_jobs = remotive.fetch(query, location, country, remote, limit)
-        if remotive_jobs:
-            used.append("remotive")
-            jobs.extend(remotive_jobs)
-
+    if jsearch.available:
+        add("jsearch", jsearch.fetch(query, location, country, remote, limit))
+    if len(_dedupe(jobs)) < 5:
+        add("adzuna", adzuna.fetch(query, location, country, remote, limit))
+    if remote or len(_dedupe(jobs)) < 5:
+        add("remotive", remotive.fetch(query, location, country, remote, limit))
     if len(_dedupe(jobs)) < 3:
-        cache_jobs = cache.fetch(query, location, country, remote, limit)
-        if cache_jobs:
-            used.append("cache")
-            jobs.extend(cache_jobs)
+        add("cache", cache.fetch(query, location, country, remote, limit))
 
     return _dedupe(jobs)[:limit], used
-
-
-# --- The single tool the agent sees ------------------------------------------
 
 
 @tool
@@ -288,11 +323,12 @@ def search_jobs(query: str, country: str | None = None, remote: bool = False, li
     Args:
         query: Role/skill search terms, e.g. "machine learning engineer python".
         country: Two-letter country code (us, gb, de, in, au, br, ...). Omit to
-            infer from the query text.
+            infer it from the query text.
         remote: Set true to prioritise remote-friendly roles.
-        limit: Maximum number of postings to return (default 25).
+        limit: Maximum number of postings to return.
 
-    Returns a list of job postings (title, company, location, description, url).
+    Returns:
+        A list of job postings as dicts (title, company, location, description, url).
     """
-    jobs, _used = run_search(query=query, country=country, remote=remote, limit=limit)
-    return [j.model_dump() for j in jobs]
+    jobs, _sources = run_search(query=query, country=country, remote=remote, limit=limit)
+    return [job.model_dump() for job in jobs]

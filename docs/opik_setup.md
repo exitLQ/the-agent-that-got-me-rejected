@@ -24,7 +24,7 @@ an integration call changes, check <https://www.comet.com/docs/opik/latest>.
 The SDK is configured once at startup (`src/job_scout/tracing.py::configure_opik`).
 Each run wraps the compiled graph with `track_langgraph`, which:
 
-- Produces a **span tree per graph node** (extract_profile → fetch_jobs →
+- Produces a **span tree per graph node** (fetch_jobs →
   rank_jobs → …).
 - Enables **Show Agent Graph** in the trace sidebar (graph auto-extracted).
 - Auto-computes **per-run cost** for OpenAI models (e.g. gpt-4o-mini).
@@ -41,7 +41,7 @@ Per run we also attach:
 
 ## 3. Prompt library
 
-The prompt constants in `src/job_scout/prompts/` are registered in the Opik
+The prompt constants in `src/job_scout/graph/prompts/` are registered in the Opik
 prompt library at startup (`register_prompts`). The local constants remain the
 source of truth; Opik mirrors them and versions on content change. Phase 3's
 optimizer depends on this version history.
