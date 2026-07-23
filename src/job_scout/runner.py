@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 from job_scout.config import get_settings
-from job_scout.graph import build_graph
+from job_scout.graph.graph import build_graph
 from job_scout.graph.schemas import Profile, RankedJob
 from job_scout.profile import extract_profile
 from job_scout.tracing import attach_cv, get_tracer, opik_url, trace_graph

@@ -225,8 +225,8 @@ request during a run. The configured Ollama server should therefore remain on
 The offline search ranks committed cache entries by the words in the generated
 query, gives remote postings a small boost when remote work is requested,
 removes duplicates, and returns at most the requested limit. It never silently
-switches to a live provider. Precise cache location matching is intentionally
-reserved for Point 3 of the improvement plan.
+switches to a live provider. The precise location filter described below is
+applied before results are returned.
 
 The interface footer reports:
 
@@ -279,6 +279,82 @@ request fails the test, Opik remains disabled despite configured credentials,
 cache provenance is available, and the interface CSS contains no external font
 import.
 
+## Precise location matching
+
+### What was implemented
+
+Location handling is deterministic and shared by cached and live results:
+
+- Candidate and job locations are normalized without regard to case, accents,
+  repeated whitespace, or punctuation.
+- Country names, common abbreviations, translated names, cities, and regional
+  labels are mapped to validated two-letter country codes.
+- Country aliases are matched on word boundaries. For example, `Australia` is
+  never interpreted as `US` merely because it contains those letters.
+- Unknown locations remain unknown instead of silently defaulting to the United
+  States.
+- Every location extracted from the profile is considered. The first remains
+  the primary location sent to a live provider, while post-filtering accepts an
+  eligible result for any preferred location.
+- The profile location is authoritative when it conflicts with a country code
+  selected by the model.
+
+### Match levels
+
+Results are filtered and ordered with four explicit levels:
+
+| Rank | Meaning | Example for `Berlin, Germany` |
+|---|---|---|
+| 4 | Exact city or equivalent locality | `Mitte, Berlin` |
+| 3 | Eligible remote scope | `Worldwide` or `Europe only` |
+| 2 | Same-country fallback | `Essen, Deutschland` |
+| 1 | No location preference supplied | Provider order is preserved |
+| 0 | Known mismatch | `London, UK` or `USA only` remote |
+
+Exact matches appear before eligible remote roles, followed by same-country
+fallbacks. The sort is stable within each level, so the source's relevance
+ordering is preserved. Known mismatches are removed.
+
+Translated city aliases are treated as the same place where configured. For
+example, `Munich` matches `München`, `Vienna` matches `Wien`, and `Bangalore`
+matches `Bengaluru`.
+
+### Remote geography
+
+The `remote` flag alone does not make a posting globally eligible. When remote
+work is requested, the stated scope must include the candidate:
+
+- `Worldwide`, `Global`, and `Anywhere` accept every country.
+- `Europe`, `Americas`, `LATAM`, and `APAC` accept countries in their respective
+  region.
+- A country-specific remote role must match one of the profile's countries.
+
+For example, a candidate in Germany who accepts remote work can receive a
+`Europe only` posting but not a `USA only` posting.
+
+### Provider behavior
+
+JSearch and Adzuna use a country derived from the primary profile location.
+They use a model-supplied country only when the location itself cannot be
+resolved. Adzuna skips its request if neither value resolves to a supported
+country, avoiding an accidental request to a guessed market.
+
+After any provider responds, the same local match function filters its
+normalized `JobPosting` objects. Offline cache results and online results
+therefore follow identical location rules.
+
+### Verification
+
+Run the location and source tests:
+
+```bash
+uv run pytest tests/test_jobs_api.py tests/test_nodes.py
+```
+
+The tests cover accent normalization, word-boundary safety, translated cities,
+exact and country-level ordering, multiple profile locations, remote regions,
+unknown locations, provider behavior, deduplication, and result limits.
+
 ## Run the application
 
 ```bash
@@ -325,8 +401,10 @@ Fetch jobs -> Rank jobs -> Enough strong matches?
 
 The model selects job-search arguments through a tool call. In the default
 offline mode, search reads only cached data. With offline mode disabled, the
-live adapters run before the cache fallback. Ranking runs in batches, and the
-graph can broaden a weak search up to a fixed limit.
+live adapters run before the cache fallback. A deterministic location gate
+orders eligible results and removes known geographical mismatches before
+ranking runs in batches. The graph can broaden a weak search up to a fixed
+limit.
 
 See [Architecture](docs/architecture.md) for the detailed graph.
 

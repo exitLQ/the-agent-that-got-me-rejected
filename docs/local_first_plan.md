@@ -61,6 +61,31 @@ model-independent query generator remain possible refinements. They are not
 required for the strict network boundary because cache search is already
 deterministic after the model supplies the query.
 
+## Incremental improvement 3: Precise location matching
+
+Status: implemented.
+
+- Added accent-, case-, whitespace-, and punctuation-insensitive normalization.
+- Replaced the implicit United States fallback with validated country
+  resolution.
+- Added exact-city, remote-region, same-country, and mismatch levels.
+- Added translated city aliases and word-boundary-safe country aliases.
+- Applied the same deterministic filter to cache and live-source results.
+- Made the search consider every preferred location extracted from a profile.
+- Made the primary profile location authoritative over an inconsistent
+  model-selected country.
+- Added tests for local, country, remote, multiple-location, unknown-location,
+  and provider cases.
+
+Acceptance criteria:
+
+- A Berlin preference ranks Berlin above eligible European remote work and
+  same-country fallbacks.
+- A country-restricted remote role is excluded for candidates outside that
+  country.
+- Unknown place names do not silently trigger a United States request.
+- Location behavior is identical in offline and online result processing.
+
 ## Phase 3: Local observability
 
 - Add a no-op tracer as the default.

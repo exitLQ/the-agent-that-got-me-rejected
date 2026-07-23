@@ -43,7 +43,8 @@ flowchart TB
     MODE -->|"false"| JS["JSearch<br/>primary"]
     JS --> AZ["Adzuna<br/>international"] --> RM["Remotive<br/>keyless"] --> CA
   end
-  SRCH -->|"JobPostings"| RJ
+  SRCH -->|"JobPostings"| LOC["location gate<br/>exact city → remote scope → same country<br/>known mismatches removed"]
+  LOC --> RJ
 
   E -->|"RankedJobs"| RUN
   RUN -->|"ranked cards + cost/latency + Opik link"| UI
@@ -89,7 +90,10 @@ flowchart TB
    it returns directly from the committed cache and never initializes a live
    adapter. With offline mode disabled, it uses the JSearch → Adzuna → Remotive
    → cache cascade.
-4. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
+4. **Location gate.** Every preferred profile location is normalized locally.
+   Exact city matches rank above eligible remote scopes and same-country
+   fallbacks; known geographical mismatches are removed before LLM ranking.
+5. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
    (provider-agnostic + a per-run call budget). **Opik** is available only when
    offline mode is disabled and tracing is explicitly configured. `config.py`
    supplies keys, the offline boundary, and other settings.

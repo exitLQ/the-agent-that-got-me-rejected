@@ -80,6 +80,10 @@ Then wire it into `run_search(...)` in the order you want it tried, add its key
 to `config.py` + `.env.example`, and extend the `JobSourceName` literal in
 `schemas.py`. That's it — the agent's tool signature does not change.
 
+`run_search` applies the shared deterministic location gate after every adapter
+returns. Preserve the provider's most specific location or remote-scope text so
+exact-city, country, and regional-remote matching can make an accurate decision.
+
 ## Why no scrapers
 
 This repo will not include LinkedIn/Indeed scrapers or third-party scraping

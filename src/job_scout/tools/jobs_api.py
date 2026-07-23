@@ -1,12 +1,12 @@
 """Job search exposed to the agent as a single ``search_jobs`` tool.
 
-Behind the tool, ``run_search`` fans out to pluggable ``JobSource`` adapters and
-merges their results:
+Behind the tool, ``run_search`` uses the committed cache in offline mode. In
+online mode it fans out to pluggable ``JobSource`` adapters:
 
     JSearch → Adzuna → Remotive → committed cache
 
-Each adapter is tried only if the ones before it returned too few jobs, so a
-reader with no API keys still gets results from the offline cache. No scraping
+Each adapter is tried only if the ones before it returned too few eligible jobs.
+All results pass through the same deterministic location filter. No scraping
 sources are included (see ``docs/extending_sources.md``).
 """
 
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -26,30 +27,261 @@ from job_scout.graph.schemas import JobPosting
 
 DESCRIPTION_LIMIT = 4000
 DEFAULT_LIMIT = 25
-DEFAULT_COUNTRY = "us"
 CACHE_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data" / "cached_jobs.json"
 
-_COUNTRY_CODES: dict[str, str] = {
-    "united states": "us", "usa": "us", "us": "us", "america": "us",
-    "united kingdom": "gb", "uk": "gb", "england": "gb", "london": "gb",
-    "germany": "de", "deutschland": "de", "berlin": "de", "munich": "de", "münchen": "de",
-    "india": "in", "bengaluru": "in", "bangalore": "in", "mumbai": "in", "delhi": "in",
-    "australia": "au", "sydney": "au", "melbourne": "au",
-    "brazil": "br", "brasil": "br", "são paulo": "br", "sao paulo": "br",
-    "canada": "ca", "france": "fr", "spain": "es", "netherlands": "nl",
-    "singapore": "sg", "poland": "pl", "italy": "it",
-}  # fmt: skip
+_COUNTRY_ALIASES: dict[str, tuple[str, ...]] = {
+    "at": ("austria", "osterreich"),
+    "au": ("australia",),
+    "br": ("brazil", "brasil"),
+    "ca": ("canada",),
+    "ch": ("switzerland", "schweiz", "suisse"),
+    "de": ("germany", "deutschland"),
+    "es": ("spain", "espana"),
+    "fr": ("france",),
+    "gb": ("united kingdom", "great britain", "england", "scotland", "wales", "uk"),
+    "in": ("india",),
+    "it": ("italy", "italia"),
+    "mx": ("mexico",),
+    "nl": ("netherlands", "nederland"),
+    "pl": ("poland", "polska"),
+    "sg": ("singapore",),
+    "uy": ("uruguay",),
+    "us": ("united states", "united states of america", "usa"),
+}
+_CITY_COUNTRIES: dict[str, str] = {
+    "bangalore": "in",
+    "bengaluru": "in",
+    "berlin": "de",
+    "brisbane": "au",
+    "chennai": "in",
+    "delhi": "in",
+    "dusseldorf": "de",
+    "essen": "de",
+    "frankfurt": "de",
+    "hamburg": "de",
+    "hyderabad": "in",
+    "london": "gb",
+    "melbourne": "au",
+    "mumbai": "in",
+    "munich": "de",
+    "munchen": "de",
+    "new york": "us",
+    "pune": "in",
+    "san francisco": "us",
+    "sao paulo": "br",
+    "sydney": "au",
+    "toronto": "ca",
+    "vienna": "at",
+    "wien": "at",
+    "zurich": "ch",
+}
+_REGION_COUNTRIES: dict[str, str] = {
+    "allegheny county": "us",
+    "berkshire": "gb",
+    "bayern": "de",
+    "central london": "gb",
+    "county down": "gb",
+    "county tyrone": "gb",
+    "dachau kreis": "de",
+    "fairfax county": "us",
+    "fulton county": "us",
+    "ghaziabad": "in",
+    "gloucestershire": "gb",
+    "hertfordshire": "gb",
+    "karnataka": "in",
+    "kreis": "de",
+    "madhya pradesh": "in",
+    "maharashtra": "in",
+    "melbourne region": "au",
+    "nordrhein westfalen": "de",
+    "northern ireland": "gb",
+    "schleswig holstein": "de",
+    "south canberra": "au",
+    "south west england": "gb",
+    "sydney region": "au",
+    "tamil nadu": "in",
+    "telangana": "in",
+    "upper austria": "at",
+    "uttar pradesh": "in",
+    "warwickshire": "gb",
+    "west midlands": "gb",
+}
+_EUROPE_COUNTRIES = {"at", "ch", "de", "es", "fr", "gb", "it", "nl", "pl"}
+_AMERICAS_COUNTRIES = {"br", "ca", "mx", "us", "uy"}
+_LATAM_COUNTRIES = {"br", "mx", "uy"}
+_APAC_COUNTRIES = {"au", "in", "sg"}
+_GLOBAL_LOCATIONS = {"anywhere", "global", "remote", "worldwide", "world"}
+_CITY_EQUIVALENTS: dict[str, tuple[str, ...]] = {
+    "bangalore": ("bangalore", "bengaluru"),
+    "cologne": ("cologne", "koln"),
+    "munich": ("munich", "munchen"),
+    "sao paulo": ("sao paulo",),
+    "vienna": ("vienna", "wien"),
+    "zurich": ("zurich",),
+}
 
 
-def location_to_country(location: str | None) -> str:
-    """Map a free-text location to a two-letter country code (default ``us``)."""
+def normalize_location(value: str | None) -> str:
+    """Return a case- and accent-insensitive location string."""
+    if not value:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    ascii_text = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_text).split())
+
+
+def _contains_location_phrase(location: str, phrase: str) -> bool:
+    """Match a normalized location phrase on word boundaries."""
+    return bool(re.search(rf"(?:^| ){re.escape(phrase)}(?: |$)", location))
+
+
+def location_to_country(location: str | None) -> str | None:
+    """Map free-text location to a country code without guessing a default."""
     if not location:
-        return DEFAULT_COUNTRY
-    loc = location.strip().lower()
-    for keyword, code in _COUNTRY_CODES.items():
-        if keyword in loc:
+        return None
+    loc = normalize_location(location)
+    if len(loc) == 2 and loc in _COUNTRY_ALIASES:
+        return loc
+    for code, aliases in _COUNTRY_ALIASES.items():
+        if any(_contains_location_phrase(loc, alias) for alias in aliases):
             return code
-    return DEFAULT_COUNTRY
+    for city, code in _CITY_COUNTRIES.items():
+        if _contains_location_phrase(loc, city):
+            return code
+    for region, code in _REGION_COUNTRIES.items():
+        if _contains_location_phrase(loc, region):
+            return code
+    return None
+
+
+def normalize_country_code(country: str | None) -> str | None:
+    """Validate a country code or resolve a country name to its code."""
+    normalized = normalize_location(country)
+    if len(normalized) == 2 and normalized in _COUNTRY_ALIASES:
+        return normalized
+    return location_to_country(country)
+
+
+def _canonical_city(location: str) -> str:
+    """Resolve known translated city names to one stable identifier."""
+    for canonical, aliases in _CITY_EQUIVALENTS.items():
+        if any(_contains_location_phrase(location, alias) for alias in aliases):
+            return canonical
+    for city in _CITY_COUNTRIES:
+        if _contains_location_phrase(location, city):
+            return city
+    return ""
+
+
+def _remote_scope_matches(offered: str, wanted_country: str) -> bool:
+    """Whether a remote posting's stated geographical scope includes a country."""
+    tokens = set(offered.split())
+    if tokens & _GLOBAL_LOCATIONS:
+        return True
+    return (
+        ("europe" in tokens and wanted_country in _EUROPE_COUNTRIES)
+        or (("america" in tokens or "americas" in tokens) and wanted_country in _AMERICAS_COUNTRIES)
+        or ("latam" in tokens and wanted_country in _LATAM_COUNTRIES)
+        or (("apac" in tokens or "asia" in tokens or "oceania" in tokens) and wanted_country in _APAC_COUNTRIES)
+    )
+
+
+def _mentions_country(location: str, country: str) -> bool:
+    """Whether a normalized location explicitly includes one country."""
+    if not country:
+        return False
+    if country in location.split():
+        return True
+    if any(_contains_location_phrase(location, alias) for alias in _COUNTRY_ALIASES.get(country, ())):
+        return True
+    return any(
+        code == country and _contains_location_phrase(location, city)
+        for city, code in _CITY_COUNTRIES.items()
+    )
+
+
+def location_match_rank(
+    job_location: str,
+    requested_location: str | None,
+    requested_country: str | None,
+    *,
+    job_remote: bool,
+    remote_requested: bool,
+) -> int:
+    """Return a deterministic location rank, or zero for a known mismatch.
+
+    Rank 4 is an exact city/locality match, 3 is an eligible remote match,
+    2 is a same-country fallback, and 1 means no location preference was given.
+    """
+    wanted = normalize_location(requested_location)
+    offered = normalize_location(job_location)
+    country = normalize_country_code(requested_country) or ""
+
+    if not wanted and not country:
+        return 3 if job_remote and remote_requested else 1
+
+    wanted_country = country or location_to_country(requested_location) or ""
+    offered_country = location_to_country(job_location) or ""
+    wanted_locality = _canonical_city(wanted)
+    offered_locality = _canonical_city(offered)
+    if not wanted_locality and wanted:
+        is_country_only = wanted_country and any(
+            wanted == alias for alias in _COUNTRY_ALIASES.get(wanted_country, ())
+        )
+        if not is_country_only:
+            wanted_locality = normalize_location((requested_location or "").split(",", maxsplit=1)[0])
+
+    if wanted_locality and (
+        wanted_locality == offered_locality
+        or (offered and _contains_location_phrase(offered, wanted_locality))
+    ):
+        return 4
+
+    if job_remote and remote_requested:
+        if _remote_scope_matches(offered, wanted_country):
+            return 3
+        if _mentions_country(offered, wanted_country) or (
+            wanted_country and offered_country == wanted_country
+        ):
+            return 3
+        return 0
+
+    if wanted_country and offered_country == wanted_country:
+        return 2
+    return 0
+
+
+def _rank_location_matches(
+    jobs: list[JobPosting],
+    locations: list[str],
+    country: str | None,
+    remote: bool,
+) -> list[JobPosting]:
+    """Filter known location mismatches and order exact matches first."""
+    ranked: list[tuple[int, JobPosting]] = []
+    for job in jobs:
+        ranks = [
+            location_match_rank(
+                job.location,
+                location,
+                None,
+                job_remote=job.remote,
+                remote_requested=remote,
+            )
+            for location in locations
+        ]
+        if not ranks:
+            ranks = [
+                location_match_rank(
+                    job.location,
+                    None,
+                    country,
+                    job_remote=job.remote,
+                    remote_requested=remote,
+                )
+            ]
+        ranked.append((max(ranks), job))
+    return [job for rank, job in sorted(ranked, key=lambda item: item[0], reverse=True) if rank > 0]
 
 
 def _truncate(text: str) -> str:
@@ -97,9 +329,11 @@ class JSearchSource:
             return []
         params: dict[str, object] = {
             "query": f"{query} in {location}" if location else query,
-            "country": country or location_to_country(location),
             "num_pages": 1,
         }
+        resolved_country = location_to_country(location) or normalize_country_code(country)
+        if resolved_country:
+            params["country"] = resolved_country
         if remote:
             params["work_from_home"] = "true"
         try:
@@ -158,7 +392,9 @@ class AdzunaSource:
         """Fetch postings for one country (derived from ``country`` or the location)."""
         if not self.available:
             return []
-        code = country or location_to_country(location)
+        code = location_to_country(location) or normalize_country_code(country)
+        if not code:
+            return []
         params = {
             "app_id": self.app_id,
             "app_key": self.app_key,
@@ -298,18 +534,29 @@ def run_search(
     remotive: RemotiveSource | None = None,
     cache: CacheSource | None = None,
     offline_mode: bool | None = None,
+    preferred_locations: list[str] | None = None,
 ) -> tuple[list[JobPosting], list[str]]:
     """Search across the sources in order and return ``(jobs, sources_used)``.
 
-    A source is only queried if the previous ones returned too few jobs. Results
-    are merged, deduped by ``(title, company)`` and capped at ``limit``. The
-    sources are injectable for testing. ``sources_used`` goes into trace metadata.
+    A source is only queried if the previous ones returned too few
+    location-eligible jobs. Results are location-filtered, merged, deduped by
+    ``(title, company)`` and capped at ``limit``. ``preferred_locations`` allows
+    every location in a profile to participate in post-filtering while
+    ``location`` remains the primary live-provider query. Sources are injectable
+    for testing. ``sources_used`` goes into trace metadata.
     """
     cache = cache or CacheSource()
+    raw_locations = preferred_locations if preferred_locations is not None else ([location] if location else [])
+    match_locations = [item for item in raw_locations if normalize_location(item)]
     if offline_mode is None:
         offline_mode = get_settings().offline_mode
     if offline_mode:
-        cached = _dedupe(cache.fetch(query, location, country, remote, limit))[:limit]
+        cached = _rank_location_matches(
+            _dedupe(cache.fetch(query, location, country, remote, limit)),
+            match_locations,
+            country,
+            remote,
+        )[:limit]
         return cached, ["cache"] if cached else []
 
     jsearch = jsearch or JSearchSource()
@@ -321,6 +568,7 @@ def run_search(
 
     def add(source_name: str, found: list[JobPosting]) -> None:
         """Record a source's results if it returned any."""
+        found = _rank_location_matches(found, match_locations, country, remote)
         if found:
             used.append(source_name)
             jobs.extend(found)

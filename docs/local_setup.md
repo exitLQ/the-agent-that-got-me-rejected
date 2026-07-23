@@ -116,6 +116,20 @@ Open <http://localhost:7860>.
 Use a synthetic PDF from `data/fixture_cvs/` for the first run. The application
 extracts the profile first and then starts the job-search graph.
 
+### Location behavior
+
+The locations extracted from the CV control a deterministic post-filter:
+
+- exact city matches appear first;
+- geographically eligible remote roles appear next when remote work is
+  accepted;
+- other jobs in the same country are fallback results; and
+- known country or remote-scope mismatches are removed.
+
+Location matching ignores case, accents, and punctuation. It also recognizes
+common translations such as `Munich` and `München`. Unknown locations are not
+assigned to a guessed country.
+
 ## 7. Development workflow
 
 Before committing:
@@ -151,6 +165,13 @@ Live jobs are intentionally disabled while `OFFLINE_MODE=true`. Set
 `OFFLINE_MODE=false` and restart the application to opt in to live providers.
 Cached results keep the application usable without them. The interface shows
 the cache count and file date because cached listings can be stale.
+
+### No jobs for the selected location
+
+The cache may contain no keyword match in the requested city, country, or
+eligible remote region. Check the extracted locations on the profile screen.
+Use a city-and-country form such as `Vienna, Austria` when editing the source CV.
+With online mode enabled, also confirm that the provider supports that country.
 
 ### No traces appear
 

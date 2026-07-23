@@ -17,13 +17,23 @@ def test_fetch_jobs_uses_llm_tool_args(monkeypatch, sample_profile, sample_jobs)
     monkeypatch.setattr(fetch_mod, "get_chat_model", lambda *a, **k: llm)
     captured = {}
 
-    def fake_run_search(query, location, country, remote, limit):
-        captured.update(query=query, country=country, remote=remote)
+    def fake_run_search(query, location, country, remote, limit, preferred_locations):
+        captured.update(
+            query=query,
+            country=country,
+            remote=remote,
+            preferred_locations=preferred_locations,
+        )
         return sample_jobs, ["adzuna"]
 
     monkeypatch.setattr(fetch_mod, "run_search", fake_run_search)
     out = fetch_jobs({"profile": sample_profile, "llm_calls": 1})
-    assert captured == {"query": "ml engineer", "country": "de", "remote": True}
+    assert captured == {
+        "query": "ml engineer",
+        "country": "de",
+        "remote": True,
+        "preferred_locations": ["Berlin, Germany"],
+    }
     assert out["jobs"] == sample_jobs
     assert out["jobs_sources"] == ["adzuna"]
     assert out["search_query"] == "ml engineer"
