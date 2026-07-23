@@ -17,7 +17,7 @@ job applications.
 ## Features
 
 - Typed CV profile extraction
-- LangGraph agent with a bounded search-reformulation loop
+- LangGraph agent with a bounded, audited search-reformulation loop
 - Strict offline mode using the committed job cache by default
 - Optional live search through JSearch, Adzuna, and Remotive
 - Batched job-fit ranking with a transparent hybrid score
@@ -586,6 +586,127 @@ gaps, optional and negated statements, title and tag evidence, Java versus
 JavaScript boundaries, model-hallucination replacement, schema requirements,
 UI evidence rendering, and score consistency.
 
+## Optimized search reformulation
+
+### Previous behavior
+
+When fewer than five jobs scored at least 60, the graph asked the model for a
+broader query. The following fetch node then asked the model a second time to
+select search-tool arguments. That second decision could ignore the reformulated
+query. In addition, old jobs were placed before new jobs and the merged list was
+capped at 25, so a full first result set could discard every new retry result.
+
+### Controlled retry flow
+
+The graph still performs at most two reformulations, but each retry now follows
+one controlled path:
+
+1. summarize result quality without sending job descriptions;
+2. request one short and materially different query;
+3. validate and deduplicate the proposal;
+4. choose a deterministic fallback when validation fails;
+5. execute the accepted query directly without another model decision;
+6. place new unique results before old results during the capped merge; and
+7. rank the resulting set again.
+
+This removes one LLM call from every retry. Ranking calls are unchanged.
+
+### Quality feedback
+
+The reformulation prompt receives only compact derived metadata:
+
+- number of ranked jobs;
+- number scoring at least 60;
+- best score;
+- up to three top job titles with scores;
+- up to four common grounded technology gaps;
+- the previous query; and
+- all queries already attempted.
+
+Raw job descriptions and CV text are not added to this prompt. The profile
+portion contains primary roles and at most ten profile skills.
+
+Attempt 1 asks for a common adjacent title with at most one strong skill.
+Attempt 2 removes niche specialization and uses a broader established role
+family.
+
+### Query validation
+
+`sanitize_query` accepts only the first non-empty output line and removes a
+simple `Search query:` label, code fences, surrounding quotes, and a trailing
+period. A proposal is rejected when it:
+
+- is empty;
+- contains more than eight whitespace-separated terms;
+- exceeds 100 characters;
+- contains a URL; or
+- contains Boolean `AND`, `OR`, or `NOT` operators or a common prose preamble;
+  or
+- normalizes to a query already in history.
+
+Duplicate detection is case-, accent-, punctuation-, and whitespace-insensitive.
+For example, `Data-Scientist` and `data scientist` have the same history key.
+
+### Deterministic fallbacks
+
+If a model proposal is invalid or repeated, the application chooses the first
+novel candidate from a fixed role map and the profile's strongest skills.
+Examples include:
+
+| Primary role | First adjacent roles |
+|---|---|
+| Data Scientist | Machine Learning Engineer, Data Analyst |
+| Machine Learning Engineer | Data Scientist, AI Engineer |
+| Data Engineer | Analytics Engineer, Platform Data Engineer |
+| Software Engineer | Backend Engineer, Platform Engineer |
+| Frontend Engineer | Web Developer, Full Stack Engineer |
+| Product Manager | Technical Product Manager, Product Owner |
+
+Seniority terms are removed from fallback role names. Attempt 1 prefers the
+first adjacent role plus one skill. Attempt 2 prefers a different broad role
+without adding another specialization. Generic technology-role queries are a
+last resort, ensuring the bounded loop always has a valid novel query.
+
+### Result merging
+
+The merge still deduplicates by normalized title and company and still returns
+at most 25 jobs. On retries, however, new unique results are ordered before old
+results. This guarantees that a full initial set cannot prevent newly discovered
+jobs from entering the next ranking pass.
+
+### Query history and audit
+
+The initial query and every executed retry query are stored in `query_history`.
+Every reformulation also records:
+
+```text
+attempt
+previous query
+accepted query
+strategy: model or fallback
+acceptance or rejection reason
+jobs seen
+good jobs
+best score
+```
+
+The result footer shows the number of executed queries and exposes their path as
+hover text. Above the job cards, `Query audit` expands to show the strategy and
+quality metrics for every reformulation.
+
+### Verification
+
+Run the optimizer, node, runner, graph, and schema tests:
+
+```bash
+uv run pytest tests/test_query_optimizer.py tests/test_nodes.py tests/test_runner.py tests/test_graph.py tests/test_schemas.py
+```
+
+They verify sanitization, duplicate keys, two deterministic fallback stages,
+direct retry execution, saved model calls, new-result merge priority, diagnostic
+records, query history propagation, audit rendering, loop thresholds, and
+schema bounds.
+
 ## Run the application
 
 ```bash
@@ -648,6 +769,7 @@ src/job_scout/
   llm.py              Model initialization and call budget
   matching.py         Shared punctuation-safe text normalization
   profile.py          CV-to-profile extraction
+  query_optimizer.py  Query validation, history, and deterministic fallbacks
   grounding.py        Evidence-backed skill matches and technology gaps
   scoring.py          Deterministic and hybrid fit-score calculation
   runner.py           Shared application and batch runner

@@ -79,6 +79,19 @@ class SkillEvidence(BaseModel):
     job_evidence: str
 
 
+class QueryReformulation(BaseModel):
+    """Auditable record of one controlled query-broadening decision."""
+
+    attempt: int = Field(ge=1)
+    previous_query: str
+    query: str
+    strategy: Literal["model", "fallback"]
+    reason: str
+    jobs_seen: int = Field(ge=0)
+    good_jobs: int = Field(ge=0)
+    best_score: int = Field(ge=0, le=100)
+
+
 class RankedJob(BaseModel):
     """A job scored against the candidate profile."""
 

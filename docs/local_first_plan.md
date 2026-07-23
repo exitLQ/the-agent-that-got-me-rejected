@@ -134,6 +134,29 @@ Acceptance criteria:
 - Alias spelling differences do not create duplicate or contradictory results.
 - Skill chips and the numeric skill component use the same match set.
 
+## Incremental improvement 6: Optimized search reformulation
+
+Status: implemented.
+
+- Added compact result diagnostics to the reformulation prompt.
+- Added attempt-specific broadening instructions.
+- Added query sanitization, length limits, and normalized duplicate detection.
+- Added deterministic role-family fallbacks.
+- Executed accepted retry queries directly, removing one model call per retry.
+- Changed capped retry merging to prioritize new unique jobs.
+- Added query history and structured reformulation audit records.
+- Exposed the audit and query count in the interface.
+- Added tests for validation, history, fallbacks, diagnostics, call savings,
+  merge behavior, runner propagation, UI rendering, and schema bounds.
+
+Acceptance criteria:
+
+- A retry cannot repeat a previous query after normalization.
+- Invalid model output always produces a valid deterministic fallback.
+- The accepted retry query cannot be replaced by a second model decision.
+- New retry results can enter a full 25-job result set.
+- Every broadening decision is inspectable after the run.
+
 ## Phase 3: Local observability
 
 - Add a no-op tracer as the default.

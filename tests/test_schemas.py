@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from job_scout.graph.schemas import JobPosting, RankedJob, ScoreBreakdown, SkillEvidence
+from job_scout.graph.schemas import (
+    JobPosting,
+    QueryReformulation,
+    RankedJob,
+    ScoreBreakdown,
+    SkillEvidence,
+)
 from tests.conftest import make_job
 
 
@@ -41,4 +47,28 @@ def test_skill_evidence_requires_both_provenance_fields():
         SkillEvidence(
             skill="Python",
             profile_evidence="profile.skills: Python",
+        )
+
+
+def test_query_reformulation_bounds():
+    QueryReformulation(
+        attempt=1,
+        previous_query="data scientist",
+        query="data analyst",
+        strategy="model",
+        reason="novel",
+        jobs_seen=3,
+        good_jobs=1,
+        best_score=70,
+    )
+    with pytest.raises(ValidationError):
+        QueryReformulation(
+            attempt=0,
+            previous_query="data scientist",
+            query="data analyst",
+            strategy="fallback",
+            reason="invalid",
+            jobs_seen=3,
+            good_jobs=1,
+            best_score=70,
         )

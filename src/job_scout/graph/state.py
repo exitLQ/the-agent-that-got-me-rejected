@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from job_scout.graph.schemas import JobPosting, Profile, RankedJob, TailoringPack
+from job_scout.graph.schemas import (
+    JobPosting,
+    Profile,
+    QueryReformulation,
+    RankedJob,
+    TailoringPack,
+)
 
 
 class AgentState(TypedDict, total=False):
@@ -19,6 +25,8 @@ class AgentState(TypedDict, total=False):
     cv_text: str
     profile: Profile | None
     search_query: str | None
+    query_history: list[str]
+    reformulation_log: list[QueryReformulation]
     jobs: list[JobPosting]
     ranked_jobs: list[RankedJob]
     reformulation_count: int

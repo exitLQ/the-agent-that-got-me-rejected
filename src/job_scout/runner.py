@@ -15,7 +15,7 @@ from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 from job_scout.config import get_settings
 from job_scout.graph.graph import build_graph
-from job_scout.graph.schemas import Profile, RankedJob
+from job_scout.graph.schemas import Profile, QueryReformulation, RankedJob
 from job_scout.profile import extract_profile
 from job_scout.tracing import attach_cv, get_tracer, opik_url, trace_graph
 
@@ -40,6 +40,8 @@ class RunResult:
     ranked_jobs: list[RankedJob] = field(default_factory=list)
     jobs_sources: list[str] = field(default_factory=list)
     reformulation_count: int = 0
+    query_history: list[str] = field(default_factory=list)
+    reformulation_log: list[QueryReformulation] = field(default_factory=list)
     n_jobs_fetched: int = 0
     n_jobs_ranked: int = 0
     errors: list[str] = field(default_factory=list)
@@ -98,6 +100,8 @@ def stream_search(
         result.ranked_jobs = final.get("ranked_jobs", [])
         result.jobs_sources = final.get("jobs_sources", [])
         result.reformulation_count = final.get("reformulation_count", 0)
+        result.query_history = final.get("query_history", [])
+        result.reformulation_log = final.get("reformulation_log", [])
         result.n_jobs_fetched = len(final.get("jobs", []))
         result.n_jobs_ranked = len(result.ranked_jobs)
         result.errors = final.get("errors", [])
@@ -122,6 +126,8 @@ def _status_line(node_name: str, update: dict) -> str:
         return f"searching jobs (attempt {attempt})… {len(update.get('jobs', []))} found"
     if node_name == "rank_jobs":
         return f"ranking {len(update.get('ranked_jobs', []))} jobs…"
+    if node_name == "reformulate_query":
+        return f"broadened query to: {update.get('search_query', 'fallback query')}"
     return _NODE_STATUS.get(node_name, f"{node_name}…")
 
 

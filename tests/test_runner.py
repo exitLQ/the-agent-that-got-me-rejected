@@ -21,7 +21,14 @@ class _FakeGraph:
         return iter([])  # no node updates
 
     def get_state(self, config):
-        return SimpleNamespace(values={"profile": None, "ranked_jobs": [], "jobs_sources": ["cache"]})
+        return SimpleNamespace(
+            values={
+                "profile": None,
+                "ranked_jobs": [],
+                "jobs_sources": ["cache"],
+                "query_history": ["data scientist", "data analyst"],
+            }
+        )
 
 
 def _patch(monkeypatch, fake):
@@ -49,4 +56,5 @@ def test_stream_search_yields_result(monkeypatch, sample_profile):
     assert events[-1][0] == "result"
     result = events[-1][1]
     assert result.jobs_sources == ["cache"]
+    assert result.query_history == ["data scientist", "data analyst"]
     assert result.failed is False

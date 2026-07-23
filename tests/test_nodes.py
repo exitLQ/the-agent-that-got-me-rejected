@@ -5,10 +5,10 @@ from __future__ import annotations
 import job_scout.graph.nodes.fetch_jobs as fetch_mod
 import job_scout.graph.nodes.rank_jobs as rank_mod
 import job_scout.graph.nodes.reformulate_query as reformulate_mod
-from job_scout.graph.nodes.fetch_jobs import fetch_jobs
+from job_scout.graph.nodes.fetch_jobs import _dedupe_with_existing, fetch_jobs
 from job_scout.graph.nodes.rank_jobs import rank_jobs
 from job_scout.graph.nodes.reformulate_query import reformulate_query
-from job_scout.graph.schemas import JobScore, JobScores
+from job_scout.graph.schemas import JobScore, JobScores, RankedJob
 from tests.conftest import make_job, plain_llm, structured_llm, tool_calling_llm
 
 
@@ -37,6 +37,7 @@ def test_fetch_jobs_uses_llm_tool_args(monkeypatch, sample_profile, sample_jobs)
     assert out["jobs"] == sample_jobs
     assert out["jobs_sources"] == ["adzuna"]
     assert out["search_query"] == "ml engineer"
+    assert out["query_history"] == ["ml engineer"]
     assert out["llm_calls"] == 2
 
 
@@ -47,6 +48,47 @@ def test_fetch_jobs_no_tool_call_fallback(monkeypatch, sample_profile, sample_jo
     out = fetch_jobs({"profile": sample_profile, "llm_calls": 0})
     assert any("no tool call" in e for e in out["errors"])
     assert out["jobs"] == sample_jobs
+
+
+def test_fetch_retry_executes_reformulated_query_without_second_llm(monkeypatch, sample_profile, sample_jobs):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("Retry must execute the validated query directly")
+
+    monkeypatch.setattr(fetch_mod, "get_chat_model", fail_if_called)
+    captured = {}
+
+    def fake_run_search(**kwargs):
+        captured.update(kwargs)
+        return sample_jobs, ["cache"]
+
+    monkeypatch.setattr(fetch_mod, "run_search", fake_run_search)
+    out = fetch_jobs(
+        {
+            "profile": sample_profile,
+            "search_query": "data analyst python",
+            "query_history": ["data scientist"],
+            "reformulation_count": 1,
+            "llm_calls": 3,
+        }
+    )
+
+    assert captured["query"] == "data analyst python"
+    assert out["query_history"] == ["data scientist", "data analyst python"]
+    assert out["llm_calls"] == 3
+
+
+def test_retry_merge_prioritizes_new_unique_results():
+    existing = [make_job(f"old-{index}", f"Old Role {index}", f"Old Co {index}") for index in range(25)]
+    new = [
+        make_job("new", "New Role", "New Co"),
+        make_job("duplicate", "Old Role 0", "Old Co 0"),
+    ]
+
+    merged = _dedupe_with_existing(existing, new, prefer_new=True)[:25]
+
+    assert merged[0].job_id == "new"
+    assert len(merged) == 25
+    assert sum(job.title == "Old Role 0" for job in merged) == 1
 
 
 def test_rank_jobs_batches_by_five(monkeypatch, sample_profile):
@@ -146,9 +188,51 @@ def test_rank_jobs_replaces_ungrounded_model_skill_claims(monkeypatch, sample_pr
 
 
 def test_reformulate_increments_counter(monkeypatch, sample_profile):
-    monkeypatch.setattr(reformulate_mod, "get_chat_model", lambda *a, **k: plain_llm("data analyst"))
+    llm = plain_llm("data analyst")
+    monkeypatch.setattr(reformulate_mod, "get_chat_model", lambda *a, **k: llm)
     state = {"profile": sample_profile, "search_query": "data scientist", "reformulation_count": 0, "llm_calls": 3}
     out = reformulate_query(state)
     assert out["search_query"] == "data analyst"
     assert out["reformulation_count"] == 1
     assert out["llm_calls"] == 4
+    assert out["reformulation_log"][0].strategy == "model"
+    prompt = llm.invoke.call_args.args[0]
+    assert "jobs seen: 0" in prompt
+    assert "Queries already tried:\ndata scientist" in prompt
+
+
+def test_reformulate_rejects_repeated_query_and_records_diagnostics(
+    monkeypatch,
+    sample_profile,
+):
+    monkeypatch.setattr(
+        reformulate_mod,
+        "get_chat_model",
+        lambda *a, **k: plain_llm("data scientist"),
+    )
+    weak = make_job("weak", "Data Scientist", "Acme")
+    state = {
+        "profile": sample_profile,
+        "search_query": "data scientist",
+        "query_history": ["data scientist"],
+        "ranked_jobs": [
+            RankedJob(
+                job=weak,
+                fit_score=55,
+                fit_explanation="Weak.",
+                gaps=["AWS"],
+            )
+        ],
+        "reformulation_count": 0,
+        "llm_calls": 3,
+    }
+
+    out = reformulate_query(state)
+    record = out["reformulation_log"][0]
+
+    assert out["search_query"] == "machine learning engineer python"
+    assert record.strategy == "fallback"
+    assert "already present" in record.reason
+    assert record.jobs_seen == 1
+    assert record.good_jobs == 0
+    assert record.best_score == 55

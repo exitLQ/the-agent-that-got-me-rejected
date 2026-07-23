@@ -31,7 +31,7 @@ flowchart TB
     S((START)) --> FJ
     FJ["fetch_jobs<br/>LLM picks search args via tool call"] --> RJ
     RJ["rank_jobs<br/>batched model assessment + deterministic components<br/>grounded skills + hybrid score"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
-    D -->|"no · under 2 loops"| RQ["reformulate_query<br/>broaden the query"]
+    D -->|"no · under 2 loops"| RQ["reformulate_query<br/>quality feedback · validation · history<br/>deterministic fallback when needed"]
     RQ --> FJ
     D -->|"yes · or cap hit"| E((END))
   end
@@ -90,14 +90,19 @@ flowchart TB
    score uses 60% deterministic rules and 40% model assessment. Displayed skill
    matches and gaps are reconstructed from profile and job evidence instead of
    trusting the model lists directly.
-3. **Job sources.** `fetch_jobs` calls `run_search`. With `OFFLINE_MODE=true`,
+3. **Controlled reformulation.** When quality is low, the node summarizes scores,
+   validates a novel two-to-eight-term query, and records an audit entry. A
+   deterministic adjacent-role fallback replaces invalid or repeated output.
+   The fetch node executes this query directly and prioritizes new unique jobs
+   during the 25-result merge.
+4. **Job sources.** `fetch_jobs` calls `run_search`. With `OFFLINE_MODE=true`,
    it returns directly from the committed cache and never initializes a live
    adapter. With offline mode disabled, it uses the JSearch → Adzuna → Remotive
    → cache cascade.
-4. **Location gate.** Every preferred profile location is normalized locally.
+5. **Location gate.** Every preferred profile location is normalized locally.
    Exact city matches rank above eligible remote scopes and same-country
    fallbacks; known geographical mismatches are removed before LLM ranking.
-5. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
+6. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
    (provider-agnostic + a per-run call budget). **Opik** is available only when
    offline mode is disabled and tracing is explicitly configured. `config.py`
    supplies keys, the offline boundary, and other settings.

@@ -209,6 +209,11 @@ body::after {
 .js-evidence summary { cursor: pointer; font-weight: 600; }
 .js-evidence ul { margin: 6px 0 0; padding-left: 18px; }
 .js-evidence li { margin: 4px 0; line-height: 1.45; }
+.js-query-audit { margin: 0 0 14px; padding: 10px 13px; border: 1px solid var(--border-color-primary);
+  border-radius: 8px; color: var(--body-text-color-subdued); font-size: 0.78rem; }
+.js-query-audit summary { cursor: pointer; font-weight: 600; }
+.js-query-audit ol { margin: 7px 0 0; padding-left: 20px; }
+.js-query-audit li { margin: 5px 0; line-height: 1.45; }
 
 /* --- Fit gauge --- */
 .js-fit-ring { --size: 56px; width: var(--size); height: var(--size); flex: none;
@@ -396,13 +401,32 @@ def _job_card(ranked: RankedJob, index: int) -> str:
 
 def _results_html(result: RunResult) -> str:
     """Render the ranked jobs as cards, or an empty state."""
+    audit = _query_audit_html(result)
     if not result.ranked_jobs:
         return (
-            '<div class="js-empty"><div class="js-empty-icon">🔍</div>'
+            f'{audit}<div class="js-empty"><div class="js-empty-icon">🔍</div>'
             "<div>No matching jobs found. Try a resume with more detail, or check back later.</div></div>"
         )
     cards = "".join(_job_card(r, i) for i, r in enumerate(result.ranked_jobs))
-    return f'<div class="js-jobs">{cards}</div>'
+    return f'{audit}<div class="js-jobs">{cards}</div>'
+
+
+def _query_audit_html(result: RunResult) -> str:
+    """Render the initial query and every auditable reformulation."""
+    if not result.query_history:
+        return ""
+    rows = [f"<li><b>initial</b>: {escape(result.query_history[0])}</li>"]
+    for record in result.reformulation_log:
+        rows.append(
+            f"<li><b>attempt {record.attempt}</b>: {escape(record.query)} "
+            f"({escape(record.strategy)}; {escape(record.reason)}; "
+            f"{record.jobs_seen} jobs, {record.good_jobs} good, best {record.best_score})</li>"
+        )
+    return (
+        '<details class="js-query-audit"><summary>'
+        f"Query audit ({len(result.query_history)} searches)</summary>"
+        f'<ol>{"".join(rows)}</ol></details>'
+    )
 
 
 def _footer_html(result: RunResult) -> str:
@@ -423,10 +447,15 @@ def _footer_html(result: RunResult) -> str:
     else:
         sources = escape(", ".join(result.jobs_sources) or "none")
         sep = ' <span class="js-muted">·</span> '
+        query_path = escape(" -> ".join(result.query_history) or "none")
+        query_meta = (
+            f'<span class="js-meta-mono" title="{query_path}">'
+            f"queries: {len(result.query_history)}</span>"
+        )
         body = (
             f'<span class="js-meta-mono">${result.cost_usd:.4f}</span>{sep}'
             f'<span class="js-meta-mono">{result.latency_s}s</span>{sep}'
-            f"source: {sources}{sep}{link}"
+            f"source: {sources}{sep}{query_meta}{sep}{link}"
         )
     return f'<div class="js-footer">{body}</div>'
 

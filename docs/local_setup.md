@@ -155,6 +155,20 @@ Optional or negated technologies are not shown as gaps. If a relevant
 technology is missing, the job may use an alias not yet present in the controlled
 catalog or may describe it without a clear requirement cue.
 
+### Reading the query audit
+
+When the first search returns fewer than five jobs scoring at least 60, the
+agent may broaden the query up to two times. Expand `Query audit` above the
+result cards to inspect:
+
+- every executed query;
+- whether the model proposal or deterministic fallback was used;
+- why a fallback was necessary; and
+- the job count, good-job count, and best score before each retry.
+
+The footer also shows the total query count. Repeated, overly long, empty, or
+URL-containing model output is rejected automatically.
+
 ## 7. Development workflow
 
 Before committing:
