@@ -941,11 +941,129 @@ both attachment guards, removal of the candidate name from ranking prompts,
 temporary upload deletion, and refusal to delete paths outside the temporary
 boundary.
 
-## Run the application
+## One-command launch
+
+### Supported launchers
+
+After installing the two system prerequisites, `uv` and Ollama, use one command
+from the repository root.
+
+Windows PowerShell:
+
+```powershell
+.\start.ps1
+```
+
+Linux:
+
+```bash
+./start.sh
+```
+
+macOS Terminal:
+
+```bash
+./start.command
+```
+
+On macOS, `start.command` can also be opened from Finder after its executable
+permission has been preserved by Git.
+
+The shell-specific files are intentionally small. All operating systems call
+the shared `scripts/start.py` implementation, which prevents platform launch
+behavior from drifting.
+
+### First-run behavior
+
+The default command performs these steps in order:
+
+1. verifies that `uv` is available;
+2. asks `uv` for an isolated Python 3.12 runtime for the launcher;
+3. creates `.env` from `.env.example` only when `.env` does not exist;
+4. installs locked dependencies with the Ollama extra and development group;
+5. reads `SCOUT_MODEL` from the process environment or `.env`;
+6. when the model uses Ollama, verifies the Ollama executable and service;
+7. downloads the configured Ollama model only when it is missing; and
+8. launches the Gradio application at <http://localhost:7860>.
+
+An existing `.env` is never overwritten. A model configured through the process
+environment takes precedence over the `.env` value. Non-Ollama models skip the
+Ollama executable, service, and model checks.
+
+Dependency synchronization is safe to repeat. `uv` reuses its environment and
+lockfile, so later starts normally complete this phase quickly.
+
+### Launcher options
+
+Linux and macOS pass options directly:
+
+```bash
+./start.sh --check
+./start.sh --skip-sync
+./start.sh --skip-model-pull
+```
+
+Windows uses PowerShell switches:
+
+```powershell
+.\start.ps1 -Check
+.\start.ps1 -SkipSync
+.\start.ps1 -SkipModelPull
+```
+
+| Option | Behavior |
+|---|---|
+| `--check` or `-Check` | Performs setup and prerequisite checks, then exits without launching |
+| `--skip-sync` or `-SkipSync` | Reuses the current environment without running `uv sync` |
+| `--skip-model-pull` or `-SkipModelPull` | Reports the exact `ollama pull` command instead of downloading a missing model |
+
+Use the default command for a first run. Use the skip options only after the
+corresponding setup step has already succeeded.
+
+### Failure behavior
+
+The launcher exits with a nonzero status and an actionable message when:
+
+- `uv` is missing;
+- `.env.example` is missing while `.env` has not been created;
+- dependency synchronization fails;
+- an Ollama model is configured but Ollama is not installed;
+- the Ollama service is not reachable;
+- a required model cannot be downloaded; or
+- the application exits with an error.
+
+The launcher does not install `uv` or Ollama system-wide because those actions
+require platform-specific trust and permission decisions. It links to the
+official installation page instead. It also does not overwrite configuration,
+API keys, or an existing virtual environment.
+
+### Direct developer start
+
+The lower-level command remains available when setup is already complete:
 
 ```bash
 uv run python -m job_scout.app
 ```
+
+The one-command launchers are the recommended user path; the direct command is
+useful for debugging and development tooling.
+
+### Verification
+
+Run the launcher unit tests:
+
+```bash
+uv run pytest tests/test_start_script.py
+```
+
+They verify configuration creation without overwrite, environment precedence,
+model-provider parsing, installed and missing model paths, service errors,
+check-only operation, and that every platform wrapper delegates to the shared
+launcher.
+
+## Run the application
+
+Use the one-command launcher for your operating system as documented above.
 
 Open <http://localhost:7860> and upload a PDF from `data/fixture_cvs/` or your
 own CV.
@@ -1014,7 +1132,12 @@ data/
   cached_jobs.json    Offline fallback postings
   fixture_cvs/        Synthetic test CVs
 docs/                 Architecture, setup, and roadmap
-scripts/              Batch and data-maintenance utilities
+scripts/
+  start.py            Shared cross-platform setup and launch logic
+  ...                 Batch and data-maintenance utilities
+start.ps1             Windows one-command launcher
+start.sh              Linux one-command launcher
+start.command         macOS one-command launcher
 tests/                Offline automated tests
 ```
 
@@ -1039,6 +1162,7 @@ Important environment variables:
 | `OLLAMA_HEALTH_TIMEOUT` | Ollama startup-check timeout | No |
 | `RANK_MAX_WORKERS` | Maximum concurrent ranking requests, from 1 to 8 | No |
 | `OFFLINE_MODE` | Restricts job search and tracing to local resources | No |
+| `PRIVACY_MODE` | Minimizes CV retention and disables cloud tracing | No |
 | `OPENAI_API_KEY` | Authentication for an optional OpenAI model | For OpenAI |
 | `OPIK_ENABLED` | Enables or disables external tracing | No |
 | `JSEARCH_API_KEY` | Enables live JSearch results | No |

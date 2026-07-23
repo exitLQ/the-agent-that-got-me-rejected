@@ -217,7 +217,15 @@ Acceptance criteria:
 
 ## Phase 5: Packaging
 
-- Add one-command launch scripts for Windows, macOS, and Linux.
+Status: one-command operating-system launchers implemented.
+
+- Added `start.ps1` for Windows PowerShell.
+- Added `start.sh` for Linux.
+- Added `start.command` for macOS Terminal and Finder.
+- Added one shared Python implementation for setup and prerequisite checks.
+- Added non-destructive `.env` creation, locked dependency synchronization,
+  Ollama service validation, and conditional model download.
+- Added check-only and explicit skip options.
 - Add a Docker Compose profile containing the app and Ollama.
 - Add a first-run setup wizard.
 - Add CI checks for offline installation, tests, and documentation.
@@ -226,6 +234,9 @@ Acceptance criteria:
 Acceptance criteria:
 
 - A new user can install and run the offline mode from the English setup guide.
+- Each supported operating system starts through one documented command after
+  `uv` and Ollama are installed.
+- Repeated starts preserve `.env` and reuse installed dependencies and models.
 - The Docker setup starts without cloud credentials.
 - CI verifies that documentation commands remain valid.
 

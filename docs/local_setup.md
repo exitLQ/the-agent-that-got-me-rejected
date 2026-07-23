@@ -28,7 +28,50 @@ git clone https://github.com/exitLQ/the-agent-that-got-me-rejected.git
 cd the-agent-that-got-me-rejected
 ```
 
-## 3. Install dependencies
+## 3. Use the one-command launcher
+
+After installing `uv` and Ollama, the recommended path performs dependency
+setup, configuration creation, model validation, and application startup.
+
+Windows PowerShell:
+
+```powershell
+.\start.ps1
+```
+
+Linux:
+
+```bash
+./start.sh
+```
+
+macOS:
+
+```bash
+./start.command
+```
+
+The first run can download the configured Ollama model and may take longer.
+Subsequent runs reuse the environment and installed model.
+
+Use check-only mode to prepare and validate without starting Gradio:
+
+```powershell
+.\start.ps1 -Check
+```
+
+```bash
+./start.sh --check
+```
+
+The launcher creates `.env` only when it is absent. It never overwrites an
+existing configuration. See the README launcher section for all skip options
+and failure behavior.
+
+## 4. Manual dependency installation
+
+The following manual commands remain available for development or launcher
+troubleshooting.
 
 ```bash
 uv sync --extra ollama --all-groups
@@ -42,7 +85,7 @@ $env:UV_PYTHON_INSTALL_DIR="$PWD\.uv-python"
 uv sync --extra ollama --all-groups
 ```
 
-## 4. Configure the application
+## 5. Configure the application
 
 Create `.env` from the example:
 
@@ -109,7 +152,7 @@ providers, the keyless Remotive service, and then the cache. Empty provider keys
 do not restore strict offline behavior; use `OFFLINE_MODE=true` for that
 guarantee.
 
-## 5. Verify the installation
+## 6. Verify the installation
 
 ```bash
 uv run pytest
@@ -125,11 +168,19 @@ Verify strict offline behavior separately:
 uv run pytest tests/test_offline_mode.py
 ```
 
-## 6. Start the interface
+Verify the shared launcher separately:
+
+```bash
+uv run pytest tests/test_start_script.py
+```
+
+## 7. Start the interface manually
 
 ```bash
 uv run python -m job_scout.app
 ```
+
+Prefer the operating-system launcher in section 3 for normal use.
 
 Open <http://localhost:7860>.
 
@@ -205,7 +256,7 @@ To test whether concurrency helps on your machine, run the same CV once with
 `RANK_MAX_WORKERS=1` and again with `RANK_MAX_WORKERS=2`, restarting the app
 between runs. Compare the ranking-only footer latency rather than total runtime.
 
-## 7. Development workflow
+## 8. Development workflow
 
 Before committing:
 
@@ -233,6 +284,34 @@ Run:
 uv python install 3.12
 uv sync --python 3.12 --all-groups
 ```
+
+The normal launcher requests Python 3.12 from `uv` automatically. These manual
+commands are primarily useful when debugging an existing environment.
+
+### Launcher cannot find uv
+
+Install `uv` from
+<https://docs.astral.sh/uv/getting-started/installation/>, open a new terminal,
+and confirm:
+
+```bash
+uv --version
+```
+
+Then run the launcher again.
+
+### Launcher cannot reach Ollama
+
+Start the Ollama application or service, then run:
+
+```bash
+ollama list
+```
+
+The launcher checks the same command before starting the application. If the
+configured model is absent, the default launcher downloads it. Use
+`--skip-model-pull` on Linux or macOS, or `-SkipModelPull` on Windows, to receive
+the manual pull command instead.
 
 ### No live jobs
 
