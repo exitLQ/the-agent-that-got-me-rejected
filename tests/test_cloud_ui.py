@@ -8,6 +8,8 @@ import textwrap
 from types import SimpleNamespace
 
 import job_scout.app as app
+from job_scout.applications import ApplicationStore
+from job_scout.graph.schemas import JobPosting, RankedJob
 from job_scout.runner import RunResult
 
 
@@ -128,3 +130,66 @@ def test_build_app_uses_the_gradio_6_blocks_api():
 
     assert len(blocks_calls) == 1
     assert {keyword.arg for keyword in blocks_calls[0].keywords} == {"title"}
+
+
+def test_save_ranked_application_refreshes_local_tracker(monkeypatch):
+    store = ApplicationStore(":memory:")
+    monkeypatch.setattr(app, "get_application_store", lambda: store)
+    ranked = RankedJob(
+        job=JobPosting(
+            job_id="tracked-1",
+            title="Data Engineer",
+            company="Example",
+            location="Remote",
+            remote=True,
+            description="Python role",
+            url="https://example.com/job",
+            source="cache",
+        ),
+        fit_score=88,
+        fit_explanation="Strong match.",
+    )
+
+    feedback, dropdown, dashboard, status, tracked_notes, cleared_notes = app.save_ranked_application(
+        [ranked],
+        "tracked-1",
+        "Applied",
+        "Follow up Friday",
+    )
+
+    assert "Saved Data Engineer at Example" in feedback
+    assert dropdown["value"] == "tracked-1"
+    assert "Applied" in dashboard
+    assert "Follow up Friday" in dashboard
+    assert status["value"] == "Applied"
+    assert tracked_notes == "Follow up Friday"
+    assert cleared_notes == ""
+    assert store.get("tracked-1").status == "Applied"
+    store.close()
+
+
+def test_dashboard_escapes_saved_job_content(monkeypatch):
+    store = ApplicationStore(":memory:")
+    monkeypatch.setattr(app, "get_application_store", lambda: store)
+    ranked = RankedJob(
+        job=JobPosting(
+            job_id="unsafe",
+            title="<script>alert(1)</script>",
+            company="A & B",
+            location="<Vienna>",
+            description="",
+            url='javascript:alert("unsafe")',
+            source="cache",
+        ),
+        fit_score=50,
+        fit_explanation="",
+    )
+    store.save(ranked, notes="<b>private</b>")
+
+    html = app._application_dashboard_html()
+
+    assert "<script>" not in html
+    assert "javascript:" not in html
+    assert "&lt;script&gt;" in html
+    assert "&lt;b&gt;private&lt;/b&gt;" in html
+    store.close()

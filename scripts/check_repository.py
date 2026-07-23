@@ -137,16 +137,26 @@ def check_version_sync() -> list[str]:
     return errors
 
 
-def check_secrets_untracked() -> list[str]:
-    """Require the local secret-bearing ``.env`` file to remain untracked."""
-    result = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", ".env"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return [".env: secret-bearing local configuration must not be tracked"] if result.returncode == 0 else []
+def check_private_files_untracked() -> list[str]:
+    """Require local credentials and tracker databases to remain untracked."""
+    targets = {
+        ".env": "secret-bearing local configuration",
+        "data/applications.db": "local application data",
+        "data/applications.db-shm": "local SQLite application data",
+        "data/applications.db-wal": "local SQLite application data",
+    }
+    errors = []
+    for path, description in targets.items():
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            errors.append(f"{path}: {description} must not be tracked")
+    return errors
 
 
 def collect_errors() -> list[str]:
@@ -158,7 +168,7 @@ def collect_errors() -> list[str]:
         check_sponsor_block,
         check_action_pins,
         check_version_sync,
-        check_secrets_untracked,
+        check_private_files_untracked,
     )
     return [error for check in checks for error in check()]
 

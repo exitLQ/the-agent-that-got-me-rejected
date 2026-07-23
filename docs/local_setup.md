@@ -91,8 +91,9 @@ To install Ollama and every supported cloud-provider integration:
 uv sync --all-extras --all-groups
 ```
 
-This synchronization also activates the complete `0.2.0` provider-selector
-feature set. No separate GitHub setting or runtime feature flag is required.
+This synchronization activates the complete `0.3.0` feature set, including the
+provider selector and local application tracker. No separate GitHub setting or
+runtime feature flag is required.
 
 ## 5. Configure the application
 
@@ -130,6 +131,7 @@ OFFLINE_MODE=true
 PRIVACY_MODE=true
 CLOUD_LLM_ENABLED=false
 OPIK_ENABLED=false
+APPLICATION_DB_PATH=data/applications.db
 ```
 
 This default uses the committed cache, disables every live job adapter, disables
@@ -146,6 +148,12 @@ It deletes eligible Gradio temporary uploads after reading, keeps raw CV text
 out of Gradio and LangGraph state, omits the candidate name from ranking
 prompts, and disables Opik traces and attachments. The structured profile and
 ranked results remain in the current browser session until reset.
+
+Application tracking is deliberately separate from resume processing. SQLite
+stores job metadata, status, notes, and timestamps in
+`data/applications.db`. It never receives CV text, the extracted profile, API
+keys, prompts, or model responses. The database is local, is excluded from Git,
+and survives the wizard's `Start over` action.
 
 For the strongest documented local boundary, combine privacy mode with
 `OFFLINE_MODE=true`, an Ollama model, and `OLLAMA_BASE_URL` on `localhost`.
@@ -238,6 +246,46 @@ uv run pytest tests/test_start_script.py
 ```bash
 uv run python -m job_scout.app
 ```
+
+## 8. Use the local application tracker
+
+After a search finishes:
+
+1. Open `Save to application tracker`.
+2. Select a ranked job and one of the supported states: `Found`, `Interested`,
+   `Applied`, `Interview`, `Rejected`, or `Offer`.
+3. Add an optional private note and press `Save application`.
+4. Open `Application tracker` above the wizard to review the saved record.
+5. Select a record, edit its state or notes, and press `Update application`.
+6. Use `Remove` to delete only the explicitly selected record.
+
+The SQLite file is created automatically. To place it elsewhere, set an
+alternative local path in `.env`:
+
+```dotenv
+APPLICATION_DB_PATH=D:\private-data\job-scout-applications.db
+```
+
+Use a path that the current operating-system account can write. Do not point
+multiple simultaneously running app processes at unrelated copies and expect
+them to synchronize. SQLite coordinates access to one shared file, but this
+release does not provide multi-user accounts, remote synchronization, or
+database encryption.
+
+For a consistent manual backup, stop Gradio before copying the file:
+
+```powershell
+Copy-Item data\applications.db data\applications.backup.db
+```
+
+On Linux or macOS:
+
+```bash
+cp data/applications.db data/applications.backup.db
+```
+
+Deleting the configured database resets the tracker permanently. The normal
+wizard reset does not delete it.
 
 Prefer the operating-system launcher in section 3 for normal use.
 

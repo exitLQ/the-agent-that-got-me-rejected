@@ -10,10 +10,17 @@ conic-gauge fit score, matched-skill chips, and honest gaps.
 from __future__ import annotations
 
 from html import escape
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import gradio as gr
 
+from job_scout.applications import (
+    APPLICATION_STATUSES,
+    ApplicationRecord,
+    ApplicationStoreError,
+    get_application_store,
+)
 from job_scout.config import get_settings
 from job_scout.graph.schemas import Profile, RankedJob, SkillEvidence
 from job_scout.llm import (
@@ -501,6 +508,173 @@ def _status(text: str, error: bool = False) -> str:
     return f'<div class="{cls}">{escape(text)}</div>'
 
 
+def _application_choices(
+    records: list[ApplicationRecord] | None = None,
+) -> list[tuple[str, str]]:
+    """Return readable dropdown labels for locally tracked applications."""
+    records = get_application_store().list() if records is None else records
+    return [
+        (f"{record.status} | {record.title} — {record.company}", record.job_id)
+        for record in records
+    ]
+
+
+def _application_dashboard_html(
+    records: list[ApplicationRecord] | None = None,
+) -> str:
+    """Render an escaped overview of locally tracked applications."""
+    records = get_application_store().list() if records is None else records
+    if not records:
+        return (
+            '<div class="js-card"><b>No saved applications yet.</b>'
+            "<p>Run a search and save a ranked job to start tracking it.</p></div>"
+        )
+
+    rows = []
+    for record in records:
+        title = escape(record.title)
+        parsed_url = urlparse(record.url)
+        if parsed_url.scheme in {"http", "https"} and parsed_url.netloc:
+            title = (
+                f'<a href="{escape(record.url, quote=True)}" '
+                f'target="_blank" rel="noopener noreferrer">{title}</a>'
+            )
+        notes = escape(record.notes)
+        note_html = f"<br><small>{notes}</small>" if notes else ""
+        rows.append(
+            "<tr>"
+            f"<td>{title}<br><small>{escape(record.company)}</small></td>"
+            f"<td>{escape(record.status)}</td>"
+            f'<td class="js-meta-mono">{record.fit_score}%</td>'
+            f"<td>{escape(record.location)}{note_html}</td>"
+            "</tr>"
+        )
+    return (
+        '<div class="js-card"><div style="overflow-x:auto"><table>'
+        "<thead><tr><th>Role</th><th>Status</th><th>Fit</th><th>Location / notes</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div></div>"
+    )
+
+
+def _selected_application_values(
+    records: list[ApplicationRecord],
+) -> tuple[str | None, str, str]:
+    """Return the newest record's identifier and editable values."""
+    if not records:
+        return None, "Found", ""
+    record = records[0]
+    return record.job_id, record.status, record.notes
+
+
+def refresh_application_tracker():
+    """Reload the tracker controls and dashboard from SQLite."""
+    records = get_application_store().list()
+    selected, status, notes = _selected_application_values(records)
+    return (
+        gr.update(choices=_application_choices(records), value=selected),
+        gr.update(value=status),
+        notes,
+        _application_dashboard_html(records),
+        _status(f"Loaded {len(records)} saved application(s)."),
+    )
+
+
+def load_application(job_id: str | None):
+    """Load the status and notes for one selected application."""
+    if not job_id:
+        return gr.update(value="Found"), ""
+    record = get_application_store().get(job_id)
+    if record is None:
+        return gr.update(value="Found"), ""
+    return gr.update(value=record.status), record.notes
+
+
+def save_ranked_application(
+    ranked_jobs: list[RankedJob] | list[dict] | None,
+    job_id: str | None,
+    status: str,
+    notes: str,
+):
+    """Save one search result and refresh the shared tracker."""
+    ranked = next(
+        (
+            item if isinstance(item, RankedJob) else RankedJob.model_validate(item)
+            for item in (ranked_jobs or [])
+            if (item.job.job_id if isinstance(item, RankedJob) else item.get("job", {}).get("job_id")) == job_id
+        ),
+        None,
+    )
+    if ranked is None:
+        return (
+            _status("Select a ranked job before saving.", error=True),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            "",
+        )
+    try:
+        record = get_application_store().save(ranked, status=status, notes=notes)
+    except ApplicationStoreError as exc:
+        return (
+            _status(str(exc), error=True),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            "",
+        )
+    records = get_application_store().list()
+    return (
+        _status(f"Saved {record.title} at {record.company}."),
+        gr.update(choices=_application_choices(records), value=record.job_id),
+        _application_dashboard_html(records),
+        gr.update(value=record.status),
+        record.notes,
+        "",
+    )
+
+
+def update_application(job_id: str | None, status: str, notes: str):
+    """Update a selected locally tracked application."""
+    if not job_id:
+        return _status("Select a saved application first.", error=True), gr.update(), gr.update()
+    try:
+        record = get_application_store().update(job_id, status=status, notes=notes)
+    except ApplicationStoreError as exc:
+        return _status(str(exc), error=True), gr.update(), gr.update()
+    records = get_application_store().list()
+    return (
+        _status(f"Updated {record.title} to {record.status}."),
+        gr.update(choices=_application_choices(records), value=record.job_id),
+        _application_dashboard_html(records),
+    )
+
+
+def delete_application(job_id: str | None):
+    """Delete a selected application after an explicit button click."""
+    if not job_id:
+        return (
+            _status("Select a saved application first.", error=True),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            "",
+        )
+    store = get_application_store()
+    deleted = store.delete(job_id)
+    records = store.list()
+    selected, status, notes = _selected_application_values(records)
+    message = "Removed the application from the local tracker." if deleted else "Application was already removed."
+    return (
+        _status(message, error=not deleted),
+        gr.update(choices=_application_choices(records), value=selected),
+        _application_dashboard_html(records),
+        gr.update(value=status),
+        notes,
+    )
+
+
 def _cloud_warning_html(model: str) -> str:
     """Render an explicit external-data-transfer warning for cloud models."""
     provider = model_provider(model)
@@ -580,14 +754,14 @@ def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: 
 def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
     """Step 2 → 3: run the job-finding graph for the extracted profile and stream results.
 
-    Outputs: (page_profile, page_results, results_html, footer_html).
+    Outputs include page visibility, rendered results, selectable jobs, and state.
     """
     go = gr.update(visible=False), gr.update(visible=True)
     if profile is None:
-        yield (gr.update(visible=True), gr.update(visible=False), gr.update(), "")
+        yield (gr.update(visible=True), gr.update(visible=False), gr.update(), "", gr.update(), [])
         return
 
-    yield (*go, _loading_html("Searching for jobs…"), "")
+    yield (*go, _loading_html("Searching for jobs…"), "", gr.update(), gr.update())
     result = RunResult()
     for kind, payload in stream_search(
         profile,
@@ -596,17 +770,28 @@ def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
         model_name=model_name,
     ):
         if kind == "status":
-            yield (*go, _loading_html(str(payload)), "")
+            yield (*go, _loading_html(str(payload)), "", gr.update(), gr.update())
         elif kind == "result":
             result = payload  # type: ignore[assignment]
 
-    yield (*go, _results_html(result), _footer_html(result))
+    choices = [
+        (f"{ranked.job.title} — {ranked.job.company}", ranked.job.job_id)
+        for ranked in result.ranked_jobs
+    ]
+    selected = choices[0][1] if choices else None
+    yield (
+        *go,
+        _results_html(result),
+        _footer_html(result),
+        gr.update(choices=choices, value=selected),
+        result.ranked_jobs,
+    )
 
 
 def reset():
     """Return to step 1 and clear the wizard.
 
-    Outputs include page visibility, cleared content, profile state, and model state.
+    Outputs include page visibility, cleared content, and temporary session state.
     """
     return (
         gr.update(visible=True),
@@ -618,6 +803,8 @@ def reset():
         "",
         None,
         None,
+        gr.update(choices=[], value=None),
+        [],
     )
 
 
@@ -635,11 +822,40 @@ def build_app() -> gr.Blocks:
         thread_id = gr.State(lambda: str(uuid4()))
         profile_state = gr.State(None)
         selected_model_state = gr.State(None)
+        ranked_jobs_state = gr.State([])
 
         gr.HTML(
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>the-agent-that-got-me-rejected</h1></div>'
             f'<div><span class="js-tag">{mode_caption}</span></div></div>'
         )
+        saved_records = get_application_store().list()
+        saved_id, saved_status, saved_notes = _selected_application_values(saved_records)
+        with gr.Accordion("Application tracker", open=False):
+            tracked_job_input = gr.Dropdown(
+                choices=_application_choices(saved_records),
+                value=saved_id,
+                label="Saved application",
+                interactive=True,
+            )
+            with gr.Row():
+                tracked_status_input = gr.Dropdown(
+                    choices=list(APPLICATION_STATUSES),
+                    value=saved_status,
+                    label="Status",
+                    interactive=True,
+                )
+                tracked_notes_input = gr.Textbox(
+                    value=saved_notes,
+                    label="Private local notes",
+                    max_lines=4,
+                )
+            with gr.Row():
+                update_application_btn = gr.Button("Update application", variant="primary")
+                refresh_applications_btn = gr.Button("Refresh")
+                delete_application_btn = gr.Button("Remove", variant="stop")
+            tracker_status = gr.HTML()
+            tracker_dashboard = gr.HTML(_application_dashboard_html(saved_records))
+
         with gr.Group(visible=True) as page_start:
             gr.HTML(_stepper(1))
             gr.HTML(INTRO_HTML)
@@ -672,6 +888,25 @@ def build_app() -> gr.Blocks:
             gr.HTML('<p class="js-section-label">Ranked jobs</p>')
             results_out = gr.HTML()
             footer_out = gr.HTML()
+            with gr.Accordion("Save to application tracker", open=False):
+                result_job_input = gr.Dropdown(
+                    choices=[],
+                    label="Ranked job",
+                    interactive=True,
+                )
+                result_status_input = gr.Dropdown(
+                    choices=list(APPLICATION_STATUSES),
+                    value="Interested",
+                    label="Status",
+                    interactive=True,
+                )
+                result_notes_input = gr.Textbox(
+                    label="Private local notes",
+                    max_lines=4,
+                    placeholder="Optional next step, contact, or interview note",
+                )
+                save_application_btn = gr.Button("Save application", variant="primary")
+                save_application_status = gr.HTML()
             restart_btn = gr.Button("Start over", variant="secondary")
 
         provider_input.change(
@@ -692,7 +927,57 @@ def build_app() -> gr.Blocks:
         find_btn.click(
             on_find,
             inputs=[profile_state, thread_id, selected_model_state],
-            outputs=[page_profile, page_results, results_out, footer_out],
+            outputs=[
+                page_profile,
+                page_results,
+                results_out,
+                footer_out,
+                result_job_input,
+                ranked_jobs_state,
+            ],
+        )
+        tracked_job_input.change(
+            load_application,
+            inputs=[tracked_job_input],
+            outputs=[tracked_status_input, tracked_notes_input],
+        )
+        refresh_applications_btn.click(
+            refresh_application_tracker,
+            outputs=[
+                tracked_job_input,
+                tracked_status_input,
+                tracked_notes_input,
+                tracker_dashboard,
+                tracker_status,
+            ],
+        )
+        update_application_btn.click(
+            update_application,
+            inputs=[tracked_job_input, tracked_status_input, tracked_notes_input],
+            outputs=[tracker_status, tracked_job_input, tracker_dashboard],
+        )
+        delete_application_btn.click(
+            delete_application,
+            inputs=[tracked_job_input],
+            outputs=[
+                tracker_status,
+                tracked_job_input,
+                tracker_dashboard,
+                tracked_status_input,
+                tracked_notes_input,
+            ],
+        )
+        save_application_btn.click(
+            save_ranked_application,
+            inputs=[ranked_jobs_state, result_job_input, result_status_input, result_notes_input],
+            outputs=[
+                save_application_status,
+                tracked_job_input,
+                tracker_dashboard,
+                tracked_status_input,
+                tracked_notes_input,
+                result_notes_input,
+            ],
         )
         reset_outputs = [
             page_start,
@@ -704,6 +989,8 @@ def build_app() -> gr.Blocks:
             footer_out,
             profile_state,
             selected_model_state,
+            result_job_input,
+            ranked_jobs_state,
         ]
         change_btn.click(reset, outputs=reset_outputs)
         restart_btn.click(reset, outputs=reset_outputs)

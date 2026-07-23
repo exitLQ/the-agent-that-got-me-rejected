@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     offline_mode: bool = Field(default=True, alias="OFFLINE_MODE")
     privacy_mode: bool = Field(default=True, alias="PRIVACY_MODE")
     cloud_llm_enabled: bool = Field(default=False, alias="CLOUD_LLM_ENABLED")
+    application_db_path: str = Field(default="data/applications.db", alias="APPLICATION_DB_PATH")
 
     openai_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENAI_API_KEY")
     anthropic_api_key: SecretStr = Field(default=SecretStr(""), alias="ANTHROPIC_API_KEY")
@@ -54,6 +55,7 @@ class Settings(BaseSettings):
         "scout_model",
         "scout_tailor_model",
         "ollama_base_url",
+        "application_db_path",
         mode="before",
     )
     @classmethod
@@ -67,6 +69,14 @@ class Settings(BaseSettings):
             value = value.strip()
             if value.startswith("#"):
                 return ""
+        return value
+
+    @field_validator("application_db_path")
+    @classmethod
+    def _require_application_db_path(cls, value: str) -> str:
+        """Reject an empty tracker path before SQLite receives it."""
+        if not value:
+            raise ValueError("APPLICATION_DB_PATH must not be empty")
         return value
 
     @property

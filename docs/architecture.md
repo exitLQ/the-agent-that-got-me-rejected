@@ -49,6 +49,8 @@ flowchart TB
 
   E -->|"RankedJobs"| RUN
   RUN -->|"ranked cards + cost/latency + Opik link"| UI
+  UI -->|"selected job + status + notes"| DB["applications.py<br/>local SQLite tracker"]
+  DB -->|"saved application overview"| UI
 
   subgraph LLM_L["LLM · llm.py (provider guard + get_chat_model + ensure_budget ≤25)"]
     OA["Ollama local default<br/>OpenAI · Anthropic · xAI/Grok optional<br/>cloud requires consent + matching key"]
@@ -121,3 +123,9 @@ flowchart TB
    configured. Privacy mode also blocks PDF attachments and excludes the
    candidate name from ranking prompts. `config.py` supplies keys, both
    boundaries, and other settings.
+7. **Application tracker.** Ranked results remain temporary until the user
+   explicitly saves one. `applications.py` then upserts a job snapshot, one of
+   six validated statuses, private notes, and timestamps in local SQLite. The
+   tracker does not persist CV text, candidate profiles, prompts, model output,
+   or credentials. `Start over` clears the wizard session but deliberately
+   leaves saved applications intact.

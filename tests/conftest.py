@@ -25,6 +25,7 @@ os.environ["SCOUT_TAILOR_MODEL"] = "ollama:qwen3:8b"
 os.environ["OFFLINE_MODE"] = "true"
 os.environ["PRIVACY_MODE"] = "true"
 os.environ["CLOUD_LLM_ENABLED"] = "false"
+os.environ["APPLICATION_DB_PATH"] = ":memory:"
 
 from job_scout.config import get_settings  # noqa: E402
 from job_scout.graph.schemas import JobPosting, Profile  # noqa: E402

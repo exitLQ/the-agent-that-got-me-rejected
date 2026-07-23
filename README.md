@@ -26,10 +26,76 @@ job applications.
 - Optional live search through JSearch, Adzuna, and Remotive
 - Bounded concurrent job-fit ranking with a transparent hybrid score
 - Evidence-backed matched skills and technology gaps
+- Local SQLite application tracker with status and private notes
 - Gradio web interface
 - Optional Opik tracing
 - Offline fallback data for development and testing
 - Guardrails for loop count and LLM-call budget
+
+## Version 0.3.0
+
+Version `0.3.0` adds a local application tracker to the Gradio interface. A
+ranked job can be saved with one of six explicit states: `Found`, `Interested`,
+`Applied`, `Interview`, `Rejected`, or `Offer`. The tracker remains available
+above the three-step search wizard, so saved applications can be reviewed,
+updated, or removed without uploading the CV again.
+
+The tracker uses SQLite and creates `data/applications.db` automatically on
+first use. It stores only the job identifier, title, company, location, URL,
+source, fit score, application status, notes, and timestamps. It does not store
+CV text, the extracted candidate profile, prompts, model responses, or API
+keys. The database and its SQLite sidecar files are ignored by Git.
+
+No GitHub setting activates `0.3.0`. After pulling the commit, synchronize the
+environment and start the application:
+
+```bash
+uv sync --all-extras --all-groups
+uv run python -m job_scout.app
+```
+
+The existing launchers perform the same dependency synchronization:
+
+```powershell
+.\start.ps1
+```
+
+The database is created when Gradio starts. Existing `.env` files remain valid;
+the default location requires no configuration. To choose another location,
+add a local path to `.env`:
+
+```dotenv
+APPLICATION_DB_PATH=data/applications.db
+```
+
+### Application-tracker workflow
+
+1. Upload a PDF, confirm the extracted profile, and run the job search.
+2. Open `Save to application tracker` under the ranked results.
+3. Select the job, choose its status, optionally add a private note, and press
+   `Save application`.
+4. Open `Application tracker` at the top of the interface to review saved jobs.
+5. Change the selected job's status or notes and press `Update application`.
+6. Press `Remove` only when the selected local record should be deleted.
+
+Saving the same job again updates its snapshot and tracker fields instead of
+creating a duplicate. Notes are trimmed and limited to 2,000 characters.
+Removing a record affects only that selected job and does not delete a source
+PDF or any other saved application.
+
+### Backup and reset
+
+Stop the application before copying the database for a consistent manual
+backup:
+
+```powershell
+Copy-Item data\applications.db data\applications.backup.db
+```
+
+To reset the tracker, stop the application and remove
+`data/applications.db`. This deletion is intentionally not performed by the
+application or its `Start over` button. The wizard reset clears only temporary
+session results; saved applications remain in SQLite.
 
 ## Version 0.2.0
 
@@ -1547,6 +1613,7 @@ Important environment variables:
 | `ADZUNA_APP_ID` | Enables Adzuna with `ADZUNA_APP_KEY` | No |
 | `ADZUNA_APP_KEY` | Enables Adzuna with `ADZUNA_APP_ID` | No |
 | `MAX_LLM_CALLS_PER_RUN` | Per-run LLM circuit breaker | No |
+| `APPLICATION_DB_PATH` | Local SQLite application-tracker path | No |
 
 Never commit `.env` or API keys.
 

@@ -25,3 +25,8 @@ dist/
 
 # Batch/snapshot run logs (artifacts, not committed)
 reports/*.log
+
+# Local application tracker
+data/applications.db
+data/applications.db-shm
+data/applications.db-wal
