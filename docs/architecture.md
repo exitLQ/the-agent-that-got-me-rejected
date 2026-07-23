@@ -13,7 +13,7 @@ flowchart TB
   U(["User"]) -->|"upload CV (PDF)"| UI
 
   subgraph UI_L["Gradio UI · app.py"]
-    UI["3-step wizard<br/>Resume → Profile → Jobs<br/>streamed status · fit gauges · footer"]
+    UI["3-step wizard<br/>session model → Resume → Profile → Jobs<br/>provider status · streamed progress · fit gauges"]
   end
 
   UI -->|"filepath"| CVR["cv_reader.py<br/>pypdf: PDF → text"]
@@ -25,7 +25,7 @@ flowchart TB
     RUN["stream_search / run_once<br/>measures cost + latency · streams node status"]
   end
 
-  RUN -->|"Profile"| G
+  RUN -->|"Profile + session model"| G
 
   subgraph G["LangGraph agent · graph.py (MemorySaver checkpoint)"]
     direction TB
@@ -80,7 +80,10 @@ flowchart TB
 
 ## Reading it
 
-1. **Upload → text → profile.** The Gradio wizard hands the PDF to `cv_reader`
+1. **Provider → upload → text → profile.** The first page combines a provider
+   and model identifier into a canonical session model. It checks local or
+   cloud readiness before reading the PDF and never stores keys in browser
+   state. The Gradio wizard then hands the PDF to `cv_reader`
    (pypdf), then `extract_profile` turns the text into a typed `Profile` with one
    structured-output LLM call before the graph, so it is extracted once. In
    privacy mode the temporary UI upload is deleted after reading, and raw text
@@ -109,6 +112,8 @@ flowchart TB
    fallbacks; known geographical mismatches are removed before LLM ranking.
 6. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
    (provider guard, provider-agnostic model factory, and per-run call budget).
+   The selected model travels in LangGraph state, so profile extraction and all
+   graph nodes use one session-scoped choice without mutating process settings.
    Ollama is local by default. OpenAI, Anthropic, and xAI/Grok require
    `OFFLINE_MODE=false`, `CLOUD_LLM_ENABLED=true`, and a matching key. **Opik**
    is available only when

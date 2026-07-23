@@ -57,7 +57,7 @@ def reformulate_query(state: AgentState) -> dict:
         diagnostics=diagnostics,
         attempt=attempt,
     )
-    proposal = get_chat_model(settings.scout_model, temperature=0.0).invoke(prompt).content
+    proposal = get_chat_model(state.get("model", settings.scout_model), temperature=0.0).invoke(prompt).content
     new_query = sanitize_query(str(proposal))
     strategy = "model"
     reason = "accepted a short, novel model proposal"

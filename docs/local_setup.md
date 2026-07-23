@@ -91,6 +91,9 @@ To install Ollama and every supported cloud-provider integration:
 uv sync --all-extras --all-groups
 ```
 
+This synchronization also activates the complete `0.2.0` provider-selector
+feature set. No separate GitHub setting or runtime feature flag is required.
+
 ## 5. Configure the application
 
 Create `.env` from the example:
@@ -110,6 +113,12 @@ Pull the default model:
 ```bash
 ollama pull qwen3:8b
 ```
+
+The Gradio start page uses `SCOUT_MODEL` as its initial selection. You can choose
+another provider and model for the current browser session without editing
+`.env` or restarting the application. Cloud selections remain blocked unless
+offline mode is disabled, cloud consent is enabled, and the matching key is
+configured in `.env`.
 
 Minimal local model configuration:
 

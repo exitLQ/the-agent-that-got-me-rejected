@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -29,6 +30,7 @@ EMOJI = re.compile(
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*]\(([^)]+)\)")
 ACTION_USE = re.compile(r"^\s*uses:\s*[^@\s]+@([^\s#]+)", re.MULTILINE)
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+PACKAGE_VERSION = re.compile(r'^__version__ = "([^"]+)"$', re.MULTILINE)
 
 
 def markdown_files() -> list[Path]:
@@ -117,6 +119,24 @@ def check_action_pins() -> list[str]:
     ]
 
 
+def check_version_sync() -> list[str]:
+    """Keep package metadata, runtime metadata, and release documentation aligned."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project_version = project["project"]["version"]
+    package_text = (ROOT / "src" / "job_scout" / "__init__.py").read_text(encoding="utf-8")
+    package_match = PACKAGE_VERSION.search(package_text)
+    package_version = package_match.group(1) if package_match else ""
+    errors = []
+    if package_version != project_version:
+        errors.append(
+            "src/job_scout/__init__.py: __version__ must match pyproject.toml "
+            f"({package_version!r} != {project_version!r})"
+        )
+    if f"## Version {project_version}" not in README.read_text(encoding="utf-8"):
+        errors.append(f"README.md: missing release section for version {project_version}")
+    return errors
+
+
 def check_secrets_untracked() -> list[str]:
     """Require the local secret-bearing ``.env`` file to remain untracked."""
     result = subprocess.run(
@@ -137,6 +157,7 @@ def collect_errors() -> list[str]:
         check_local_markdown_links,
         check_sponsor_block,
         check_action_pins,
+        check_version_sync,
         check_secrets_untracked,
     )
     return [error for check in checks for error in check()]

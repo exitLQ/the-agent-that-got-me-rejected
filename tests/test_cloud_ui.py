@@ -28,9 +28,9 @@ def test_footer_discloses_cloud_data_transfer(monkeypatch):
     )
     monkeypatch.setattr(app, "get_settings", lambda: settings)
 
-    html = app._footer_html(RunResult())
+    html = app._footer_html(RunResult(model="xai:grok-4.3"))
 
-    assert "cloud LLM: CV content sent to anthropic" in html
+    assert "cloud LLM: CV content sent to xai" in html
     assert "privacy: raw resume discarded" in html
     assert "cost: check provider dashboard" in html
     assert "tracing: disabled" in html
@@ -55,13 +55,65 @@ def test_failed_run_mentions_trace_only_when_opik_is_active(monkeypatch):
 def test_main_passes_theme_and_css_to_gradio_launch(monkeypatch):
     captured = {}
     demo = SimpleNamespace(launch=lambda **kwargs: captured.update(kwargs))
-    monkeypatch.setattr(app, "get_settings", lambda: SimpleNamespace(scout_model="ollama:qwen3:8b"))
-    monkeypatch.setattr(app, "validate_model_configuration", lambda model: "ollama")
     monkeypatch.setattr(app, "build_app", lambda: demo)
 
     app.main()
 
     assert captured == {"theme": app.THEME, "css": app.CSS}
+
+
+def test_provider_status_discloses_blocked_cloud_transfer(monkeypatch):
+    status = SimpleNamespace(
+        ready=False,
+        external=True,
+        message="Blocked by OFFLINE_MODE=true.",
+    )
+    monkeypatch.setattr(app, "model_configuration_status", lambda model: status)
+
+    html = app._provider_status_html("anthropic", "claude-sonnet-4-6")
+
+    assert "Not ready" in html
+    assert "Blocked by OFFLINE_MODE=true." in html
+    assert "anthropic:claude-sonnet-4-6" in html
+
+
+def test_upload_rejects_blocked_provider_before_reading_resume(monkeypatch):
+    monkeypatch.setattr(app, "get_settings", lambda: SimpleNamespace(privacy_mode=False))
+    monkeypatch.setattr(
+        app,
+        "validate_model_configuration",
+        lambda model: (_ for _ in ()).throw(app.ModelConfigurationError("blocked")),
+    )
+    monkeypatch.setattr(
+        app,
+        "extract_cv_text",
+        lambda path: (_ for _ in ()).throw(AssertionError("resume was read")),
+    )
+
+    events = list(app.on_upload("resume.pdf", "thread", "openai", "gpt-5-mini"))
+
+    assert len(events) == 1
+    assert "Model is not ready: blocked" in events[0][3]
+    assert events[0][4:] == (None, None)
+
+
+def test_upload_keeps_selected_model_in_session_state(monkeypatch, sample_profile):
+    captured = {}
+    monkeypatch.setattr(app, "get_settings", lambda: SimpleNamespace(privacy_mode=False))
+    monkeypatch.setattr(app, "validate_model_configuration", lambda model: "anthropic")
+    monkeypatch.setattr(app, "extract_cv_text", lambda path: "synthetic resume")
+
+    def fake_extract(cv_text, **kwargs):
+        captured.update(kwargs)
+        return sample_profile
+
+    monkeypatch.setattr(app, "extract_profile", fake_extract)
+
+    events = list(app.on_upload("resume.pdf", "thread", "anthropic", "claude-sonnet-4-6"))
+
+    assert events[-1][4] is sample_profile
+    assert events[-1][5] == "anthropic:claude-sonnet-4-6"
+    assert captured["model_name"] == "anthropic:claude-sonnet-4-6"
 
 
 def test_build_app_uses_the_gradio_6_blocks_api():

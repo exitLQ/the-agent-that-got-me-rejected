@@ -11,7 +11,9 @@ from job_scout.llm import (
     ModelConfigurationError,
     OllamaRuntimeError,
     get_chat_model,
+    model_configuration_status,
     model_provider,
+    qualify_model,
     validate_model_configuration,
     validate_ollama_runtime,
 )
@@ -100,6 +102,44 @@ def test_cloud_provider_prefix_is_normalized(monkeypatch):
 
     assert calls == [("openai:gpt-5-mini", 0.0)]
     get_chat_model.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("provider", "model_name", "expected"),
+    [
+        ("ollama", "qwen3:8b", "ollama:qwen3:8b"),
+        ("OLLAMA", "ollama:qwen3:8b", "ollama:qwen3:8b"),
+        (" OpenAI ", " gpt-5-mini ", "openai:gpt-5-mini"),
+    ],
+)
+def test_qualify_model_builds_a_canonical_session_model(provider, model_name, expected):
+    assert qualify_model(provider, model_name) == expected
+
+
+def test_model_status_explains_offline_cloud_block(monkeypatch):
+    monkeypatch.setenv("OFFLINE_MODE", "true")
+    monkeypatch.setenv("CLOUD_LLM_ENABLED", "true")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "configured")
+    get_settings.cache_clear()
+
+    status = model_configuration_status("anthropic:claude-sonnet-4-6")
+
+    assert status.ready is False
+    assert status.external is True
+    assert status.message == "Blocked by OFFLINE_MODE=true."
+
+
+def test_model_status_reports_ready_cloud_provider(monkeypatch):
+    monkeypatch.setenv("OFFLINE_MODE", "false")
+    monkeypatch.setenv("CLOUD_LLM_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "configured")
+    get_settings.cache_clear()
+
+    status = model_configuration_status("openai:gpt-5-mini")
+
+    assert status.ready is True
+    assert status.external is True
+    assert "will be sent to openai" in status.message
 
 
 @pytest.mark.parametrize(

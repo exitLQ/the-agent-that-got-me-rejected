@@ -10,6 +10,7 @@ correct.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 from importlib.util import find_spec
 
@@ -30,6 +31,16 @@ class OllamaRuntimeError(RuntimeError):
 
 class ModelConfigurationError(RuntimeError):
     """Raised when a model provider is unsupported or not safely configured."""
+
+
+@dataclass(frozen=True)
+class ModelStatus:
+    """Non-secret configuration status shown by the provider selector."""
+
+    provider: str
+    ready: bool
+    external: bool
+    message: str
 
 
 _CLOUD_KEY_ENV = {
@@ -66,6 +77,51 @@ def _normalized_model(model: str) -> str:
     if not provider:
         return model.strip()
     return f"{provider}:{model.partition(':')[2].strip()}"
+
+
+def qualify_model(provider: str, model_name: str) -> str:
+    """Build a canonical provider-qualified model from separate UI fields."""
+    normalized_provider = provider.strip().casefold()
+    name = model_name.strip()
+    prefix, separator, remainder = name.partition(":")
+    if separator and prefix.strip().casefold() == normalized_provider:
+        name = remainder.strip()
+    if normalized_provider not in {"ollama", *_CLOUD_KEY_ENV} or not name:
+        raise ModelConfigurationError("Choose a supported provider and enter a model identifier.")
+    return f"{normalized_provider}:{name}"
+
+
+def model_configuration_status(model: str) -> ModelStatus:
+    """Describe whether a model is selectable without contacting its service."""
+    provider = model_provider(model)
+    if provider == "ollama":
+        if find_spec("langchain_ollama") is None:
+            return ModelStatus("ollama", False, False, "Ollama support is not installed.")
+        return ModelStatus(
+            "ollama",
+            True,
+            False,
+            "Local provider configured. Connection and model availability are checked on upload.",
+        )
+    if provider not in _CLOUD_KEY_ENV:
+        return ModelStatus(provider, False, False, "Choose a supported provider and enter a model identifier.")
+
+    settings = get_settings()
+    if settings.offline_mode:
+        return ModelStatus(provider, False, True, "Blocked by OFFLINE_MODE=true.")
+    if not settings.cloud_llm_enabled:
+        return ModelStatus(provider, False, True, "Blocked until CLOUD_LLM_ENABLED=true confirms external transfer.")
+    env_name = _CLOUD_KEY_ENV[provider]
+    if not (os.environ.get(env_name) or _provider_key(provider)):
+        return ModelStatus(provider, False, True, f"Blocked because {env_name} is not configured.")
+    if find_spec(_PROVIDER_PACKAGE[provider]) is None:
+        return ModelStatus(provider, False, True, f"Provider package {_PROVIDER_PACKAGE[provider]} is not installed.")
+    return ModelStatus(
+        provider,
+        True,
+        True,
+        f"Cloud provider ready. Resume text and job content will be sent to {provider}.",
+    )
 
 
 def validate_ollama_runtime(model: str) -> None:

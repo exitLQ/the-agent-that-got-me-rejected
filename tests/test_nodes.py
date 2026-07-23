@@ -14,7 +14,12 @@ from tests.conftest import make_job, plain_llm, structured_llm, tool_calling_llm
 
 def test_fetch_jobs_uses_llm_tool_args(monkeypatch, sample_profile, sample_jobs):
     llm = tool_calling_llm([{"name": "search_jobs", "args": {"query": "ml engineer", "country": "de", "remote": True}}])
-    monkeypatch.setattr(fetch_mod, "get_chat_model", lambda *a, **k: llm)
+    selected_models = []
+    monkeypatch.setattr(
+        fetch_mod,
+        "get_chat_model",
+        lambda model, **kwargs: selected_models.append(model) or llm,
+    )
     captured = {}
 
     def fake_run_search(query, location, country, remote, limit, preferred_locations):
@@ -27,7 +32,8 @@ def test_fetch_jobs_uses_llm_tool_args(monkeypatch, sample_profile, sample_jobs)
         return sample_jobs, ["adzuna"]
 
     monkeypatch.setattr(fetch_mod, "run_search", fake_run_search)
-    out = fetch_jobs({"profile": sample_profile, "llm_calls": 1})
+    out = fetch_jobs({"profile": sample_profile, "llm_calls": 1, "model": "xai:grok-4.3"})
+    assert selected_models == ["xai:grok-4.3"]
     assert captured == {
         "query": "ml engineer",
         "country": "de",
@@ -94,8 +100,10 @@ def test_retry_merge_prioritizes_new_unique_results():
 def test_rank_jobs_batches_by_five(monkeypatch, sample_profile):
     jobs = [make_job(f"j{i}", f"Role {i}", f"Co{i}") for i in range(7)]
     calls = []
+    selected_models = []
 
-    def fake_model(*a, **k):
+    def fake_model(model_name, **kwargs):
+        selected_models.append(model_name)
         llm = structured_llm(None)
 
         def invoke(prompt):
@@ -108,7 +116,15 @@ def test_rank_jobs_batches_by_five(monkeypatch, sample_profile):
         return llm
 
     monkeypatch.setattr(rank_mod, "get_chat_model", fake_model)
-    out = rank_jobs({"profile": sample_profile, "jobs": jobs, "llm_calls": 2})
+    out = rank_jobs(
+        {
+            "profile": sample_profile,
+            "jobs": jobs,
+            "llm_calls": 2,
+            "model": "anthropic:claude-sonnet-4-6",
+        }
+    )
+    assert selected_models == ["anthropic:claude-sonnet-4-6"]
     assert len(calls) == 2  # 7 jobs -> batches of 5 + 2
     assert out["llm_calls"] == 4  # 2 + 2 batches
     assert len(out["ranked_jobs"]) == 7
@@ -189,9 +205,21 @@ def test_rank_jobs_replaces_ungrounded_model_skill_claims(monkeypatch, sample_pr
 
 def test_reformulate_increments_counter(monkeypatch, sample_profile):
     llm = plain_llm("data analyst")
-    monkeypatch.setattr(reformulate_mod, "get_chat_model", lambda *a, **k: llm)
-    state = {"profile": sample_profile, "search_query": "data scientist", "reformulation_count": 0, "llm_calls": 3}
+    selected_models = []
+    monkeypatch.setattr(
+        reformulate_mod,
+        "get_chat_model",
+        lambda model, **kwargs: selected_models.append(model) or llm,
+    )
+    state = {
+        "profile": sample_profile,
+        "search_query": "data scientist",
+        "reformulation_count": 0,
+        "llm_calls": 3,
+        "model": "openai:gpt-5-mini",
+    }
     out = reformulate_query(state)
+    assert selected_models == ["openai:gpt-5-mini"]
     assert out["search_query"] == "data analyst"
     assert out["reformulation_count"] == 1
     assert out["llm_calls"] == 4

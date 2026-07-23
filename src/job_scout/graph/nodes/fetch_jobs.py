@@ -59,7 +59,7 @@ def fetch_jobs(state: AgentState) -> dict:
         remote = profile.remote_ok
     else:
         ensure_budget(calls, 1, settings.max_llm_calls_per_run)
-        model = get_chat_model(settings.scout_model, temperature=0.0).bind_tools([search_jobs])
+        model = get_chat_model(state.get("model", settings.scout_model), temperature=0.0).bind_tools([search_jobs])
         message = model.invoke([SystemMessage(_SYSTEM), HumanMessage(_build_prompt(state))])
         calls += 1
         if message.tool_calls:

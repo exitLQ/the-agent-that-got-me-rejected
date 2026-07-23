@@ -8,6 +8,14 @@ from tests.conftest import structured_llm
 
 
 def test_extract_profile(monkeypatch, sample_profile):
-    monkeypatch.setattr(profile_mod, "get_chat_model", lambda *a, **k: structured_llm(sample_profile))
-    result = extract_profile("some cv text")
+    captured = {}
+
+    def fake_model(model_name, temperature):
+        captured.update(model_name=model_name, temperature=temperature)
+        return structured_llm(sample_profile)
+
+    monkeypatch.setattr(profile_mod, "get_chat_model", fake_model)
+    result = extract_profile("some cv text", model_name="anthropic:claude-sonnet-4-6")
+
     assert result is sample_profile
+    assert captured == {"model_name": "anthropic:claude-sonnet-4-6", "temperature": 0.0}

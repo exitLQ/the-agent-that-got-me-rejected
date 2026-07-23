@@ -61,6 +61,10 @@ def test_every_workflow_action_is_pinned_to_full_sha():
     assert checks.check_action_pins() == []
 
 
+def test_version_metadata_and_release_documentation_match():
+    assert checks.check_version_sync() == []
+
+
 def test_sponsor_block_is_preserved():
     assert checks.check_sponsor_block() == []
 

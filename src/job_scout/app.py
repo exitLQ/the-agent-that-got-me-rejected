@@ -16,7 +16,14 @@ import gradio as gr
 
 from job_scout.config import get_settings
 from job_scout.graph.schemas import Profile, RankedJob, SkillEvidence
-from job_scout.llm import ModelConfigurationError, OllamaRuntimeError, model_provider, validate_model_configuration
+from job_scout.llm import (
+    ModelConfigurationError,
+    OllamaRuntimeError,
+    model_configuration_status,
+    model_provider,
+    qualify_model,
+    validate_model_configuration,
+)
 from job_scout.privacy import delete_temporary_upload
 from job_scout.profile import extract_profile
 from job_scout.runner import RunResult, stream_search
@@ -25,6 +32,7 @@ from job_scout.tools.jobs_api import CacheSource
 from job_scout.tracing import opik_url, register_prompts
 
 CAPTION = "Prepares applications — never submits them."
+PROVIDERS = ["ollama", "openai", "anthropic", "xai", "groq"]
 
 INTRO_HTML = """
 <p class="js-lead">Drop your resume and let the-agent-that-got-me-rejected find roles that actually match it —
@@ -434,7 +442,8 @@ def _footer_html(result: RunResult) -> str:
     """Render run metadata and a trace link only when tracing is active."""
     settings = get_settings()
     privacy_note = "privacy: raw resume discarded" if settings.privacy_mode else "privacy mode: off"
-    provider = model_provider(settings.scout_model)
+    selected_model = result.model or settings.scout_model
+    provider = model_provider(selected_model)
     model_note = (
         f"cloud LLM: CV content sent to {escape(provider)}"
         if provider and provider != "ollama"
@@ -504,38 +513,71 @@ def _cloud_warning_html(model: str) -> str:
     )
 
 
-def on_upload(file_path: str | None, thread_id: str):
+def _provider_status_html(provider: str, model_name: str) -> str:
+    """Render non-secret readiness and data-transfer status for one selection."""
+    try:
+        selected_model = qualify_model(provider, model_name)
+    except ModelConfigurationError as exc:
+        return _status(str(exc), error=True)
+    status = model_configuration_status(selected_model)
+    css_class = "js-status" if status.ready and not status.external else "js-status js-status-err"
+    readiness = "Ready" if status.ready else "Not ready"
+    return (
+        f'<div class="{css_class}"><b>{readiness}:</b> {escape(status.message)} '
+        f'<span class="js-meta-mono">{escape(selected_model)}</span></div>'
+    )
+
+
+def on_provider_change(provider: str):
+    """Clear a stale model identifier when the provider changes."""
+    return gr.update(value=""), _provider_status_html(provider, "")
+
+
+def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: str):
     """Step 1 → 2: read the resume, extract the profile, and reveal the profile page.
 
-    Outputs: (page_start, page_profile, profile_html, start_status, profile_state).
+    Outputs: page visibility, profile HTML, status, profile state, and model state.
     """
     stay = gr.update(visible=True), gr.update(visible=False)
     go = gr.update(visible=False), gr.update(visible=True)
 
     if not file_path:
-        yield (*stay, gr.update(), _status("Please drop a PDF resume.", error=True), None)
+        yield (*stay, gr.update(), _status("Please drop a PDF resume.", error=True), None, None)
+        return
+    try:
+        selected_model = qualify_model(provider, model_name)
+        validate_model_configuration(selected_model)
+    except (ModelConfigurationError, OllamaRuntimeError) as exc:
+        if get_settings().privacy_mode:
+            delete_temporary_upload(file_path)
+        yield (*stay, gr.update(), _status(f"Model is not ready: {exc}", error=True), None, None)
         return
     try:
         cv_text = extract_cv_text(file_path)
     except CVReadError as exc:
-        yield (*stay, gr.update(), _status(f"Could not read that PDF: {exc}", error=True), None)
+        yield (*stay, gr.update(), _status(f"Could not read that PDF: {exc}", error=True), None, None)
         return
     finally:
         if get_settings().privacy_mode:
             delete_temporary_upload(file_path)
 
-    yield (*go, _loading_html("Reading your resume…"), "", gr.update())
+    yield (*go, _loading_html("Reading your resume…"), "", gr.update(), selected_model)
     try:
-        profile = extract_profile(cv_text, thread_id=thread_id, tags=["phase-1", "ui", "extract"])
+        profile = extract_profile(
+            cv_text,
+            thread_id=thread_id,
+            tags=["phase-1", "ui", "extract"],
+            model_name=selected_model,
+        )
     except Exception as exc:  # noqa: BLE001 - show a friendly error and return to start
         cv_text = ""
-        yield (*stay, gr.update(), _status(f"Couldn't read a profile: {exc}", error=True), None)
+        yield (*stay, gr.update(), _status(f"Couldn't read a profile: {exc}", error=True), None, None)
         return
     cv_text = ""
-    yield (*go, _profile_html(profile), "", profile)
+    yield (*go, _profile_html(profile), "", profile, selected_model)
 
 
-def on_find(profile: Profile | None, thread_id: str):
+def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
     """Step 2 → 3: run the job-finding graph for the extracted profile and stream results.
 
     Outputs: (page_profile, page_results, results_html, footer_html).
@@ -547,7 +589,12 @@ def on_find(profile: Profile | None, thread_id: str):
 
     yield (*go, _loading_html("Searching for jobs…"), "")
     result = RunResult()
-    for kind, payload in stream_search(profile, thread_id=thread_id, tags=["phase-1", "ui"]):
+    for kind, payload in stream_search(
+        profile,
+        thread_id=thread_id,
+        tags=["phase-1", "ui"],
+        model_name=model_name,
+    ):
         if kind == "status":
             yield (*go, _loading_html(str(payload)), "")
         elif kind == "result":
@@ -559,8 +606,7 @@ def on_find(profile: Profile | None, thread_id: str):
 def reset():
     """Return to step 1 and clear the wizard.
 
-    Outputs: (page_start, page_profile, page_results, cv_file, start_status,
-    results_html, footer_html).
+    Outputs include page visibility, cleared content, profile state, and model state.
     """
     return (
         gr.update(visible=True),
@@ -570,6 +616,8 @@ def reset():
         "",
         "",
         "",
+        None,
+        None,
     )
 
 
@@ -580,25 +628,35 @@ def build_app() -> gr.Blocks:
     mode_caption = "Offline mode: local model and cache only" if settings.offline_mode else CAPTION
     if settings.privacy_mode:
         mode_caption = f"{mode_caption} | Privacy mode: resume data minimized"
-    provider = model_provider(settings.scout_model)
-    if provider and provider != "ollama":
-        mode_caption = f"Online model: {provider} | External data transfer enabled"
-    cloud_warning = _cloud_warning_html(settings.scout_model)
+    provider = model_provider(settings.scout_model) or "ollama"
+    model_name = settings.scout_model.partition(":")[2].strip()
 
     with gr.Blocks(title="the-agent-that-got-me-rejected") as demo:
         thread_id = gr.State(lambda: str(uuid4()))
         profile_state = gr.State(None)
+        selected_model_state = gr.State(None)
 
         gr.HTML(
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>the-agent-that-got-me-rejected</h1></div>'
             f'<div><span class="js-tag">{mode_caption}</span></div></div>'
         )
-        if cloud_warning:
-            gr.HTML(cloud_warning)
-
         with gr.Group(visible=True) as page_start:
             gr.HTML(_stepper(1))
             gr.HTML(INTRO_HTML)
+            gr.HTML('<p class="js-section-label">Model provider</p>')
+            with gr.Row():
+                provider_input = gr.Dropdown(
+                    choices=PROVIDERS,
+                    value=provider,
+                    label="Provider",
+                    interactive=True,
+                )
+                model_input = gr.Textbox(
+                    value=model_name,
+                    label="Model identifier",
+                    placeholder="Enter the provider model identifier",
+                )
+            provider_status = gr.HTML(_provider_status_html(provider, model_name))
             cv_file = gr.File(label="", file_types=[".pdf"], type="filepath", height=150, elem_classes=["js-drop"])
             start_status = gr.HTML('<div class="js-status"></div>')
 
@@ -616,17 +674,37 @@ def build_app() -> gr.Blocks:
             footer_out = gr.HTML()
             restart_btn = gr.Button("Start over", variant="secondary")
 
+        provider_input.change(
+            on_provider_change,
+            inputs=[provider_input],
+            outputs=[model_input, provider_status],
+        )
+        model_input.change(
+            _provider_status_html,
+            inputs=[provider_input, model_input],
+            outputs=[provider_status],
+        )
         cv_file.upload(
             on_upload,
-            inputs=[cv_file, thread_id],
-            outputs=[page_start, page_profile, profile_out, start_status, profile_state],
+            inputs=[cv_file, thread_id, provider_input, model_input],
+            outputs=[page_start, page_profile, profile_out, start_status, profile_state, selected_model_state],
         )
         find_btn.click(
             on_find,
-            inputs=[profile_state, thread_id],
+            inputs=[profile_state, thread_id, selected_model_state],
             outputs=[page_profile, page_results, results_out, footer_out],
         )
-        reset_outputs = [page_start, page_profile, page_results, cv_file, start_status, results_out, footer_out]
+        reset_outputs = [
+            page_start,
+            page_profile,
+            page_results,
+            cv_file,
+            start_status,
+            results_out,
+            footer_out,
+            profile_state,
+            selected_model_state,
+        ]
         change_btn.click(reset, outputs=reset_outputs)
         restart_btn.click(reset, outputs=reset_outputs)
 
@@ -635,10 +713,6 @@ def build_app() -> gr.Blocks:
 
 def main() -> None:
     """Launch the Gradio app."""
-    try:
-        validate_model_configuration(get_settings().scout_model)
-    except (ModelConfigurationError, OllamaRuntimeError) as exc:
-        raise SystemExit(f"Startup check failed: {exc}") from exc
     build_app().launch(theme=THEME, css=CSS)
 
 

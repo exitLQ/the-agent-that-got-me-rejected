@@ -37,6 +37,7 @@ class RunResult:
     """The outcome of one agent run: results plus display/observability fields."""
 
     profile: Profile | None = None
+    model: str = ""
     ranked_jobs: list[RankedJob] = field(default_factory=list)
     jobs_sources: list[str] = field(default_factory=list)
     reformulation_count: int = 0
@@ -75,6 +76,7 @@ def stream_search(
     thread_id: str,
     tags: list[str],
     selected_job_id: str | None = None,
+    model_name: str | None = None,
 ) -> Iterator[tuple[str, object]]:
     """Run the job-finding graph for an already-extracted profile.
 
@@ -83,7 +85,8 @@ def stream_search(
     so a run never routes into stale Phase 2 tailoring on a reused thread.
     """
     settings = get_settings()
-    tracer = get_tracer(thread_id, tags)
+    selected_model = model_name or settings.scout_model
+    tracer = get_tracer(thread_id, tags, {"model": selected_model})
     usage_cb = UsageMetadataCallbackHandler()
     # track_langgraph already registers the tracer on the graph; passing it in
     # callbacks too would double-fire its run-ID index.
@@ -92,10 +95,10 @@ def stream_search(
     graph = trace_graph(build_graph(), tracer)
     # The graph needs only the structured profile. Raw resume text is kept out
     # of checkpoints, traces, and node inputs in every operating mode.
-    inputs = {"profile": profile, "selected_job_id": selected_job_id}
+    inputs = {"profile": profile, "selected_job_id": selected_job_id, "model": selected_model}
     config = {"configurable": {"thread_id": thread_id}, "callbacks": callbacks, "recursion_limit": 25}
 
-    result = RunResult(opik_url=opik_url(), profile=profile)
+    result = RunResult(opik_url=opik_url(), profile=profile, model=selected_model)
     start = time.monotonic()
     try:
         for chunk in graph.stream(inputs, config=config, stream_mode="updates"):
@@ -121,8 +124,8 @@ def stream_search(
         result.error_message = f"{type(exc).__name__}: {exc}"
     finally:
         result.latency_s = round(time.monotonic() - start, 2)
-        result.cost_estimate_available = settings.scout_model.split(":", 1)[-1] in _PRICES_PER_MTOK
-        result.cost_usd = _estimate_cost(usage_cb.usage_metadata, settings.scout_model)
+        result.cost_estimate_available = selected_model.split(":", 1)[-1] in _PRICES_PER_MTOK
+        result.cost_usd = _estimate_cost(usage_cb.usage_metadata, selected_model)
         if cv_path and not settings.privacy_mode:
             attach_cv(tracer, cv_path)
         if tracer:
@@ -143,14 +146,27 @@ def _status_line(node_name: str, update: dict) -> str:
     return _NODE_STATUS.get(node_name, f"{node_name}…")
 
 
-def run_once(cv_text: str, *, cv_path: str | None = None, thread_id: str, tags: list[str]) -> RunResult:
+def run_once(
+    cv_text: str,
+    *,
+    cv_path: str | None = None,
+    thread_id: str,
+    tags: list[str],
+    model_name: str | None = None,
+) -> RunResult:
     """Extract the profile then run the job search, returning the final result.
 
     Used by the batch runner, which starts from raw CV text.
     """
-    profile = extract_profile(cv_text, thread_id=thread_id, tags=tags)
+    profile = extract_profile(cv_text, thread_id=thread_id, tags=tags, model_name=model_name)
     result = RunResult()
-    for kind, payload in stream_search(profile, cv_path=cv_path, thread_id=thread_id, tags=tags):
+    for kind, payload in stream_search(
+        profile,
+        cv_path=cv_path,
+        thread_id=thread_id,
+        tags=tags,
+        model_name=model_name,
+    ):
         if kind == "result":
             result = payload  # type: ignore[assignment]
     return result

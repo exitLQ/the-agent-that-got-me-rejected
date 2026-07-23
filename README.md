@@ -19,6 +19,7 @@ job applications.
 ## Features
 
 - Typed CV profile extraction
+- Per-session Ollama, OpenAI, Anthropic, xAI, and Groq model selection in the UI
 - LangGraph agent with a bounded, audited search-reformulation loop
 - Strict offline mode using the committed job cache by default
 - Explicitly gated OpenAI, Anthropic, and xAI/Grok cloud-model options
@@ -29,6 +30,39 @@ job applications.
 - Optional Opik tracing
 - Offline fallback data for development and testing
 - Guardrails for loop count and LLM-call budget
+
+## Version 0.2.0
+
+Version `0.2.0` adds a provider and model selector to the first page of the
+Gradio wizard. The selection is stored in the current Gradio session and is
+used consistently for profile extraction, tool selection, ranking, query
+reformulation, cost metadata, and optional tracing. It does not modify `.env`,
+`os.environ`, or another browser session.
+
+No GitHub setting or separate feature flag activates the version. After pulling
+the `0.2.0` commit, synchronize the locked environment once:
+
+```bash
+uv sync --all-extras --all-groups
+```
+
+Then use the existing launcher. The package metadata and
+`job_scout.__version__` both report `0.2.0`.
+
+The selector never accepts or displays API keys. Cloud credentials remain in
+the local `.env` file or deployment secret store. The status panel reports:
+
+- the canonical `provider:model` selection;
+- whether the provider is ready or blocked;
+- which offline, consent, credential, or package condition is missing; and
+- whether resume text and job content will leave the machine.
+
+Changing the provider clears the previous model identifier so an Ollama tag
+cannot accidentally be sent to a cloud integration. The selected configuration
+is validated before the PDF is read. Ollama connectivity and exact model
+availability are checked at that point; cloud execution still requires
+`OFFLINE_MODE=false`, `CLOUD_LLM_ENABLED=true`, the matching key, and the
+provider package.
 
 ## Requirements
 
@@ -123,21 +157,23 @@ The application now treats Ollama as a first-class model provider:
   tool selection, batched ranking, and query reformulation.
 - The model client is cached after successful validation.
 
-### Startup validation
+### Runtime validation
 
-Before the Gradio server starts, the application requests:
+The one-command launcher validates the default model during setup. The Gradio
+selector validates the currently selected Ollama model immediately before it
+reads an uploaded PDF by requesting:
 
 ```text
 GET http://localhost:11434/api/tags
 ```
 
-This is Ollama's local model-list endpoint. Startup continues only when:
+This is Ollama's local model-list endpoint. Processing continues only when:
 
 1. the Ollama service responds successfully; and
 2. the exact model configured in `SCOUT_MODEL` is installed.
 
-If Ollama is unavailable, startup exits with a message containing the configured
-URL. If the model is missing, the message provides the exact pull command:
+If Ollama is unavailable, the interface displays a message containing the
+configured URL. If the model is missing, it provides the exact pull command:
 
 ```bash
 ollama pull qwen3:8b
@@ -175,6 +211,7 @@ online providers behind an explicit consent gate.
 | OpenAI | `openai:gpt-5-mini` | `OPENAI_API_KEY` | `langchain-openai` |
 | Anthropic | `anthropic:claude-sonnet-4-6` | `ANTHROPIC_API_KEY` | `langchain-anthropic` |
 | Grok from xAI | `xai:grok-4.3` | `XAI_API_KEY` | `langchain-xai` |
+| Groq | `groq:<model-id>` | `GROQ_API_KEY` | `langchain-groq` |
 
 Grok and Groq are different services. Grok is provided by xAI and uses
 `XAI_API_KEY`. The existing optional Groq provider uses `GROQ_API_KEY`.
@@ -207,10 +244,10 @@ CLOUD_LLM_ENABLED=true
 <PROVIDER_API_KEY>=your-key
 ```
 
-`CLOUD_LLM_ENABLED` prevents an accidental edit to `SCOUT_MODEL` from sending
-data outside the machine. `OFFLINE_MODE` remains the strict global network
-boundary. Startup fails before Gradio opens when either safeguard conflicts
-with the selected model.
+`CLOUD_LLM_ENABLED` prevents an accidental configuration or UI selection from
+sending data outside the machine. `OFFLINE_MODE` remains the strict global
+network boundary. The status panel identifies a conflict immediately and the
+upload callback rejects it before reading the PDF.
 
 Setting `OFFLINE_MODE=false` also permits the live job-source cascade. Without
 job-source credentials, the keyless Remotive adapter can be called before the
@@ -264,6 +301,23 @@ warning and identifies the active provider in the footer.
 
 Use Ollama when CV data must not leave the machine.
 
+### Selecting a provider in the UI
+
+The first wizard page contains two fields:
+
+1. **Provider** selects `ollama`, `openai`, `anthropic`, `xai`, or `groq`.
+2. **Model identifier** contains only the provider-specific model name, such as
+   `qwen3:8b`, `gpt-5-mini`, `claude-sonnet-4-6`, or `grok-4.3`.
+
+The interface combines these fields into a canonical value such as
+`anthropic:claude-sonnet-4-6`. Entering the same provider prefix in the model
+field is also accepted and normalized. Model identifiers and account access can
+change, so verify the desired identifier with the provider.
+
+The `.env` value in `SCOUT_MODEL` remains the default shown when the application
+opens. A UI selection affects only the current uploaded profile and its
+subsequent search. Start a new upload to choose another model.
+
 ### Cost and rate limits
 
 Cloud providers charge and throttle according to their own account, model, and
@@ -282,7 +336,8 @@ dashboard` instead of displaying a misleading zero.
 
 ### Switching back to local mode
 
-Restore:
+Either select `ollama` and enter `qwen3:8b` on the first page, or restore the
+local default:
 
 ```dotenv
 SCOUT_MODEL=ollama:qwen3:8b
@@ -291,8 +346,8 @@ OFFLINE_MODE=true
 CLOUD_LLM_ENABLED=false
 ```
 
-Cloud keys may be removed from `.env`. Restart the application after every
-provider change.
+Cloud keys may be removed from `.env`. Restart only after changing `.env`;
+switching a model in the UI does not require a restart.
 
 ### Provider verification
 
@@ -302,9 +357,10 @@ Run the provider tests:
 uv run pytest tests/test_llm.py tests/test_start_script.py
 ```
 
-The tests mock every client boundary. They verify provider parsing, explicit
-consent, offline rejection, matching keys, unsupported-provider errors, Ollama
-health checks, and launcher validation without contacting a model API.
+The tests mock every client boundary. They verify provider parsing, session
+model propagation, status messages, explicit consent, offline rejection,
+matching keys, unsupported-provider errors, Ollama health checks, and launcher
+validation without contacting a model API.
 
 ## Ollama runtime verification
 

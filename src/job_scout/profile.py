@@ -32,7 +32,13 @@ CV text:
 """
 
 
-def extract_profile(cv_text: str, *, thread_id: str | None = None, tags: list[str] | None = None) -> Profile:
+def extract_profile(
+    cv_text: str,
+    *,
+    thread_id: str | None = None,
+    tags: list[str] | None = None,
+    model_name: str | None = None,
+) -> Profile:
     """Extract a structured profile from CV text with a single LLM call.
 
     Pass ``thread_id`` and ``tags`` to trace the call in Opik (grouped with the
@@ -41,9 +47,10 @@ def extract_profile(cv_text: str, *, thread_id: str | None = None, tags: list[st
     from job_scout.tracing import get_tracer
 
     settings = get_settings()
-    model = get_chat_model(settings.scout_model, temperature=0.0).with_structured_output(Profile)
+    selected_model = model_name or settings.scout_model
+    model = get_chat_model(selected_model, temperature=0.0).with_structured_output(Profile)
 
-    tracer = get_tracer(thread_id, tags or ["extract"]) if thread_id else None
+    tracer = get_tracer(thread_id, tags or ["extract"], {"model": selected_model}) if thread_id else None
     config = {"callbacks": [tracer]} if tracer else {}
     profile: Profile = model.invoke(EXTRACT_PROFILE_PROMPT.format(cv_text=cv_text), config=config)
     if tracer:

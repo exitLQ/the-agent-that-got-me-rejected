@@ -78,7 +78,7 @@ def rank_jobs(state: AgentState) -> dict:
     workers = min(settings.rank_max_workers, n_batches)
     ensure_budget(calls, n_batches, settings.max_llm_calls_per_run)
 
-    model = get_chat_model(settings.scout_model, temperature=0.0).with_structured_output(JobScores)
+    model = get_chat_model(state.get("model", settings.scout_model), temperature=0.0).with_structured_output(JobScores)
     prompts = [
         RANK_JOBS_PROMPT.format(
             profile=_render_profile(profile),

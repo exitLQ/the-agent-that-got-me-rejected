@@ -23,6 +23,7 @@ class AgentState(TypedDict, total=False):
     """
 
     profile: Profile | None
+    model: str
     search_query: str | None
     query_history: list[str]
     reformulation_log: list[QueryReformulation]

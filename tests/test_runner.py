@@ -57,9 +57,18 @@ def test_stream_search_yields_result(monkeypatch, sample_profile):
     fake = _FakeGraph()
     _patch(monkeypatch, fake)
 
-    events = list(stream_search(sample_profile, thread_id="t1", tags=["ui"]))
+    events = list(
+        stream_search(
+            sample_profile,
+            thread_id="t1",
+            tags=["ui"],
+            model_name="anthropic:claude-sonnet-4-6",
+        )
+    )
     assert events[-1][0] == "result"
     result = events[-1][1]
+    assert fake.captured_inputs["model"] == "anthropic:claude-sonnet-4-6"
+    assert result.model == "anthropic:claude-sonnet-4-6"
     assert result.jobs_sources == ["cache"]
     assert result.query_history == ["data scientist", "data analyst"]
     assert result.ranking_batch_count == 3
