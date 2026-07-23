@@ -157,6 +157,30 @@ Acceptance criteria:
 - New retry results can enter a full 25-job result set.
 - Every broadening decision is inspectable after the run.
 
+## Incremental improvement 7: Concurrent ranking
+
+Status: implemented.
+
+- Added bounded concurrent execution for five-job ranking batches.
+- Added `RANK_MAX_WORKERS` with a validated range of 1 through 8 and a default
+  of 2.
+- Preserved deterministic aggregation by original batch index.
+- Restricted each response to identifiers from its own batch.
+- Isolated batch failures and retained affected jobs with deterministic scores.
+- Preserved preflight LLM-budget enforcement and attempted-call accounting.
+- Added ranking batch, worker, latency, and failure metrics to state, runner,
+  and the UI footer.
+- Added tests proving real overlap, sequential mode, failure isolation, worker
+  bounds, metrics, and footer rendering.
+
+Acceptance criteria:
+
+- At least two independent batches can be in flight simultaneously.
+- Completion order cannot change final aggregation.
+- One failed batch does not remove jobs or cancel successful batches.
+- Users can switch to sequential mode on constrained hardware.
+- Sequential and concurrent ranking latency can be compared from the UI.
+
 ## Phase 3: Local observability
 
 - Add a no-op tracer as the default.

@@ -27,6 +27,10 @@ class _FakeGraph:
                 "ranked_jobs": [],
                 "jobs_sources": ["cache"],
                 "query_history": ["data scientist", "data analyst"],
+                "ranking_batch_count": 3,
+                "ranking_workers": 2,
+                "ranking_latency_s": 0.75,
+                "ranking_failed_batches": 0,
             }
         )
 
@@ -57,4 +61,7 @@ def test_stream_search_yields_result(monkeypatch, sample_profile):
     result = events[-1][1]
     assert result.jobs_sources == ["cache"]
     assert result.query_history == ["data scientist", "data analyst"]
+    assert result.ranking_batch_count == 3
+    assert result.ranking_workers == 2
+    assert result.ranking_latency_s == 0.75
     assert result.failed is False

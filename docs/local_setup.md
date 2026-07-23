@@ -67,6 +67,7 @@ Minimal local model configuration:
 ```dotenv
 SCOUT_MODEL=ollama:qwen3:8b
 OLLAMA_BASE_URL=http://localhost:11434
+RANK_MAX_WORKERS=2
 OFFLINE_MODE=true
 OPIK_ENABLED=false
 ```
@@ -168,6 +169,22 @@ result cards to inspect:
 
 The footer also shows the total query count. Repeated, overly long, empty, or
 URL-containing model output is rejected automatically.
+
+### Ranking concurrency
+
+Ranking uses batches of five jobs and up to two concurrent model requests by
+default. The footer reports batch count, worker count, ranking latency, and
+failed batches.
+
+If Ollama consumes too much memory, configure:
+
+```dotenv
+RANK_MAX_WORKERS=1
+```
+
+To test whether concurrency helps on your machine, run the same CV once with
+`RANK_MAX_WORKERS=1` and again with `RANK_MAX_WORKERS=2`, restarting the app
+between runs. Compare the ranking-only footer latency rather than total runtime.
 
 ## 7. Development workflow
 

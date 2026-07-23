@@ -30,7 +30,7 @@ flowchart TB
     direction TB
     S((START)) --> FJ
     FJ["fetch_jobs<br/>LLM picks search args via tool call"] --> RJ
-    RJ["rank_jobs<br/>batched model assessment + deterministic components<br/>grounded skills + hybrid score"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
+    RJ["rank_jobs<br/>5-job batches · bounded concurrent workers<br/>deterministic aggregation · hybrid score"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
     D -->|"no · under 2 loops"| RQ["reformulate_query<br/>quality feedback · validation · history<br/>deterministic fallback when needed"]
     RQ --> FJ
     D -->|"yes · or cap hit"| E((END))
@@ -89,7 +89,9 @@ flowchart TB
    `reformulate_query` (max 2) to broaden the search, or ends. The displayed
    score uses 60% deterministic rules and 40% model assessment. Displayed skill
    matches and gaps are reconstructed from profile and job evidence instead of
-   trusting the model lists directly.
+   trusting the model lists directly. Independent five-job assessment batches
+   run through a bounded worker pool and are reassembled by original batch
+   index, so completion timing cannot alter aggregation.
 3. **Controlled reformulation.** When quality is low, the node summarizes scores,
    validates a novel two-to-eight-term query, and records an audit entry. A
    deterministic adjacent-role fallback replaces invalid or repeated output.

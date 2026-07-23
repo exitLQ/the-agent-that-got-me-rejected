@@ -44,6 +44,10 @@ class RunResult:
     reformulation_log: list[QueryReformulation] = field(default_factory=list)
     n_jobs_fetched: int = 0
     n_jobs_ranked: int = 0
+    ranking_batch_count: int = 0
+    ranking_workers: int = 0
+    ranking_latency_s: float = 0.0
+    ranking_failed_batches: int = 0
     errors: list[str] = field(default_factory=list)
     cost_usd: float = 0.0
     latency_s: float = 0.0
@@ -104,6 +108,10 @@ def stream_search(
         result.reformulation_log = final.get("reformulation_log", [])
         result.n_jobs_fetched = len(final.get("jobs", []))
         result.n_jobs_ranked = len(result.ranked_jobs)
+        result.ranking_batch_count = final.get("ranking_batch_count", 0)
+        result.ranking_workers = final.get("ranking_workers", 0)
+        result.ranking_latency_s = final.get("ranking_latency_s", 0.0)
+        result.ranking_failed_batches = final.get("ranking_failed_batches", 0)
         result.errors = final.get("errors", [])
     except Exception as exc:  # noqa: BLE001 - report as a failed run, keep the trace
         result.failed = True

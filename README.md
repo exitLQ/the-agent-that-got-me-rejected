@@ -20,7 +20,7 @@ job applications.
 - LangGraph agent with a bounded, audited search-reformulation loop
 - Strict offline mode using the committed job cache by default
 - Optional live search through JSearch, Adzuna, and Remotive
-- Batched job-fit ranking with a transparent hybrid score
+- Bounded concurrent job-fit ranking with a transparent hybrid score
 - Evidence-backed matched skills and technology gaps
 - Gradio web interface
 - Optional Opik tracing
@@ -707,6 +707,141 @@ direct retry execution, saved model calls, new-result merge priority, diagnostic
 records, query history propagation, audit rendering, loop thresholds, and
 schema bounds.
 
+## Concurrent ranking
+
+### Execution model
+
+Jobs are still divided into batches of five, preserving the established prompt
+size and LLM-call budget. The batches are now submitted through a bounded
+`ThreadPoolExecutor` instead of being invoked sequentially.
+
+With the maximum 25 jobs:
+
+```text
+25 jobs / 5 jobs per batch = 5 ranking requests
+```
+
+The number of requests and therefore model-token use do not increase.
+Concurrency overlaps request latency; it does not create additional batches.
+
+### Configuration
+
+The default is:
+
+```dotenv
+RANK_MAX_WORKERS=2
+```
+
+The accepted range is 1 through 8. The actual worker count for a ranking pass
+is:
+
+```text
+min(RANK_MAX_WORKERS, number of batches)
+```
+
+One batch therefore uses one worker even when the setting is higher. Setting
+the value to `1` restores sequential execution and provides a direct comparison
+baseline.
+
+Suggested starting values:
+
+| Environment | Suggested workers | Reason |
+|---|---:|---|
+| Memory-constrained local machine | 1 | Avoid simultaneous model requests |
+| Typical local Ollama setup | 2 | Default balance of overlap and resource use |
+| Tested high-memory or remote model server | 3 to 4 | More overlap when the backend supports it |
+
+Values above 4 should be used only after observing model-server memory and queue
+behavior. The application caps the value at 8 to prevent accidental unbounded
+fan-out.
+
+### Deterministic aggregation
+
+Concurrent completion order does not affect output. Every future retains its
+original batch index. After all futures finish, responses are processed in
+ascending batch-index order.
+
+A separate copy of the current Python context is propagated to every worker.
+This preserves LangChain callback, usage, and tracing context without attempting
+to enter one shared context concurrently.
+
+A response can contribute scores only for job identifiers belonging to its own
+batch. An unexpected identifier from another batch is ignored. The existing
+hybrid-score tie-break rules then determine final order independently of thread
+timing.
+
+### Failure isolation
+
+Each batch is isolated:
+
+- a successful batch keeps its model assessments;
+- a failed batch records one concise error;
+- jobs from the failed batch remain in the result set;
+- those jobs use their deterministic score and the existing fallback
+  explanation; and
+- other batches continue normally.
+
+Attempted failed batches still count toward `MAX_LLM_CALLS_PER_RUN`. The budget
+is checked for all planned batches before any worker is submitted.
+
+### Metrics
+
+The result footer now reports:
+
+```text
+ranking: <batches> batches / <workers> workers / <seconds>s / <failed> failed
+```
+
+The reported ranking latency measures the model-assessment batch phase. It does
+not include job fetching, deterministic scoring, evidence construction, or UI
+rendering. The same fields are retained in `RunResult`:
+
+```text
+ranking_batch_count
+ranking_workers
+ranking_latency_s
+ranking_failed_batches
+```
+
+### Measuring sequential versus concurrent ranking
+
+Use the same CV, model, cache, and warm model process for both runs.
+
+Sequential baseline:
+
+```dotenv
+RANK_MAX_WORKERS=1
+```
+
+Concurrent run:
+
+```dotenv
+RANK_MAX_WORKERS=2
+```
+
+Restart the application after each configuration change and compare the
+`ranking` latency in the footer. Run each configuration several times because
+Ollama model loading, operating-system scheduling, and backend request queues
+can dominate a single measurement.
+
+Concurrency is not guaranteed to be faster on every local machine. A backend
+that serializes generation may show no improvement, while simultaneous requests
+can increase memory pressure. In that case, keep `RANK_MAX_WORKERS=1`.
+
+### Verification
+
+Run the concurrency, node, runner, and configuration tests:
+
+```bash
+uv run pytest tests/test_concurrent_ranking.py tests/test_nodes.py tests/test_runner.py
+```
+
+The concurrency test uses a thread barrier to prove that two batches overlap
+without relying on fragile wall-clock thresholds. Tests also verify sequential
+mode, worker bounds, LLM-call accounting, batch-failure isolation,
+cross-batch identifier isolation, deterministic-only fallback, runner metric
+propagation, and footer rendering.
+
 ## Run the application
 
 ```bash
@@ -803,6 +938,7 @@ Important environment variables:
 | `SCOUT_MODEL` | Model used for extraction, search decisions, and ranking | Yes |
 | `OLLAMA_BASE_URL` | Local Ollama service URL | For Ollama |
 | `OLLAMA_HEALTH_TIMEOUT` | Ollama startup-check timeout | No |
+| `RANK_MAX_WORKERS` | Maximum concurrent ranking requests, from 1 to 8 | No |
 | `OFFLINE_MODE` | Restricts job search and tracing to local resources | No |
 | `OPENAI_API_KEY` | Authentication for an optional OpenAI model | For OpenAI |
 | `OPIK_ENABLED` | Enables or disables external tracing | No |

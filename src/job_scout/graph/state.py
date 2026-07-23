@@ -29,6 +29,10 @@ class AgentState(TypedDict, total=False):
     reformulation_log: list[QueryReformulation]
     jobs: list[JobPosting]
     ranked_jobs: list[RankedJob]
+    ranking_batch_count: int
+    ranking_workers: int
+    ranking_latency_s: float
+    ranking_failed_batches: int
     reformulation_count: int
     llm_calls: int
     errors: list[str]

@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     adzuna_app_key: SecretStr = Field(default=SecretStr(""), alias="ADZUNA_APP_KEY")
 
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
+    rank_max_workers: int = Field(default=2, ge=1, le=8, alias="RANK_MAX_WORKERS")
 
     @field_validator(
         "opik_workspace",

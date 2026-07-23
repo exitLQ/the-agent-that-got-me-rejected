@@ -452,10 +452,17 @@ def _footer_html(result: RunResult) -> str:
             f'<span class="js-meta-mono" title="{query_path}">'
             f"queries: {len(result.query_history)}</span>"
         )
+        ranking_meta = (
+            f'<span class="js-meta-mono" title="ranking latency">'
+            f"ranking: {result.ranking_batch_count} batches / "
+            f"{result.ranking_workers} workers / {result.ranking_latency_s:.3f}s / "
+            f"{result.ranking_failed_batches} failed"
+            f"</span>"
+        )
         body = (
             f'<span class="js-meta-mono">${result.cost_usd:.4f}</span>{sep}'
             f'<span class="js-meta-mono">{result.latency_s}s</span>{sep}'
-            f"source: {sources}{sep}{query_meta}{sep}{link}"
+            f"source: {sources}{sep}{query_meta}{sep}{ranking_meta}{sep}{link}"
         )
     return f'<div class="js-footer">{body}</div>'
 
