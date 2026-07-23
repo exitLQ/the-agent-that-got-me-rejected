@@ -89,7 +89,9 @@ def stream_search(
     callbacks = [usage_cb]
 
     graph = trace_graph(build_graph(), tracer)
-    inputs = {"profile": profile, "cv_text": cv_text, "selected_job_id": selected_job_id}
+    # The graph needs only the structured profile. Raw resume text is kept out
+    # of checkpoints, traces, and node inputs in every operating mode.
+    inputs = {"profile": profile, "selected_job_id": selected_job_id}
     config = {"configurable": {"thread_id": thread_id}, "callbacks": callbacks, "recursion_limit": 25}
 
     result = RunResult(opik_url=opik_url(), profile=profile)
@@ -119,7 +121,7 @@ def stream_search(
     finally:
         result.latency_s = round(time.monotonic() - start, 2)
         result.cost_usd = _estimate_cost(usage_cb.usage_metadata, settings.scout_model)
-        if cv_path:
+        if cv_path and not settings.privacy_mode:
             attach_cv(tracer, cv_path)
         if tracer:
             tracer.flush()
@@ -146,7 +148,7 @@ def run_once(cv_text: str, *, cv_path: str | None = None, thread_id: str, tags: 
     """
     profile = extract_profile(cv_text, thread_id=thread_id, tags=tags)
     result = RunResult()
-    for kind, payload in stream_search(profile, cv_text=cv_text, cv_path=cv_path, thread_id=thread_id, tags=tags):
+    for kind, payload in stream_search(profile, cv_path=cv_path, thread_id=thread_id, tags=tags):
         if kind == "result":
             result = payload  # type: ignore[assignment]
     return result

@@ -87,7 +87,7 @@ def trace_graph(compiled_graph, tracer):
 
 def attach_cv(tracer, pdf_path: str | Path) -> None:
     """Attach the uploaded CV PDF to the run's trace (best effort, post-run)."""
-    if tracer is None:
+    if tracer is None or get_settings().privacy_mode:
         return
     try:
         import opik

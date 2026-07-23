@@ -197,17 +197,22 @@ Acceptance criteria:
 
 ## Phase 4: Performance and privacy
 
+Status: implemented for ranking concurrency and resume privacy.
+
 - Run independent ranking batches concurrently.
 - Add model and prompt warm-up.
 - Add configurable context and output limits for local hardware.
-- Redact personal information from logs.
-- Add a privacy mode that avoids retaining uploaded PDFs.
+- Omit the candidate name from job-ranking prompts.
+- Add a default privacy mode that removes temporary UI uploads.
+- Keep raw CV text out of Gradio and LangGraph state.
+- Disable Opik traces and PDF attachments in privacy mode.
 - Document expected RAM, CPU, and GPU requirements by model size.
 
 Acceptance criteria:
 
 - Ranking latency is measured before and after concurrency.
-- Privacy mode leaves no CV file or raw CV text after a run.
+- Privacy mode removes eligible temporary CV uploads and retains no raw CV text
+  in application state after profile extraction.
 - Resource limits fail gracefully instead of crashing the interface.
 
 ## Phase 5: Packaging

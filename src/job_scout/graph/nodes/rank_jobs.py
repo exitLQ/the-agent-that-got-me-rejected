@@ -25,7 +25,6 @@ BATCH_SIZE = 5
 def _render_profile(profile: Profile) -> str:
     """Format the profile as plain text for the ranking prompt."""
     return (
-        f"Name: {profile.name}\n"
         f"Seniority: {profile.seniority}\n"
         f"Roles: {', '.join(profile.primary_roles)}\n"
         f"Skills: {', '.join(profile.skills)}\n"

@@ -69,12 +69,31 @@ SCOUT_MODEL=ollama:qwen3:8b
 OLLAMA_BASE_URL=http://localhost:11434
 RANK_MAX_WORKERS=2
 OFFLINE_MODE=true
+PRIVACY_MODE=true
 OPIK_ENABLED=false
 ```
 
 This default uses the committed cache, disables every live job adapter, disables
 Opik, and avoids external font requests from the interface. Ollama and Gradio
 still communicate over the local loopback interface.
+
+Privacy mode is a separate default safeguard:
+
+```dotenv
+PRIVACY_MODE=true
+```
+
+It deletes eligible Gradio temporary uploads after reading, keeps raw CV text
+out of Gradio and LangGraph state, omits the candidate name from ranking
+prompts, and disables Opik traces and attachments. The structured profile and
+ranked results remain in the current browser session until reset.
+
+For the strongest documented local boundary, combine privacy mode with
+`OFFLINE_MODE=true`, an Ollama model, and `OLLAMA_BASE_URL` on `localhost`.
+Privacy mode cannot prevent an explicitly configured cloud model from receiving
+the resume text required for profile extraction. The batch command preserves
+the user-owned PDF path; automatic deletion applies only to UI files inside the
+operating system temporary directory.
 
 Optional live job sources require explicit online mode:
 
@@ -231,9 +250,10 @@ With online mode enabled, also confirm that the provider supports that country.
 
 ### No traces appear
 
-Tracing is intentionally disabled while `OFFLINE_MODE=true`. To opt in to cloud
-tracing, set `OFFLINE_MODE=false`, set `OPIK_ENABLED=true`, configure the Opik
-credentials, and restart the application.
+Tracing is intentionally disabled while `OFFLINE_MODE=true` or
+`PRIVACY_MODE=true`. To opt in to cloud tracing, set both values to `false`, set
+`OPIK_ENABLED=true`, configure the Opik credentials, and restart the
+application.
 
 ### Model authentication error
 

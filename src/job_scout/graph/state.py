@@ -22,7 +22,6 @@ class AgentState(TypedDict, total=False):
     metadata respectively. ``tailoring`` and ``selected_job_id`` are Phase 2.
     """
 
-    cv_text: str
     profile: Profile | None
     search_query: str | None
     query_history: list[str]

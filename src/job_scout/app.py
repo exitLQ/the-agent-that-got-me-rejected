@@ -17,6 +17,7 @@ import gradio as gr
 from job_scout.config import get_settings
 from job_scout.graph.schemas import Profile, RankedJob, SkillEvidence
 from job_scout.llm import OllamaRuntimeError, validate_ollama_runtime
+from job_scout.privacy import delete_temporary_upload
 from job_scout.profile import extract_profile
 from job_scout.runner import RunResult, stream_search
 from job_scout.tools.cv_reader import CVReadError, extract_cv_text
@@ -432,6 +433,7 @@ def _query_audit_html(result: RunResult) -> str:
 def _footer_html(result: RunResult) -> str:
     """Render the run footer: cost, latency, job source, and the Opik link."""
     settings = get_settings()
+    privacy_note = "privacy: raw resume discarded" if settings.privacy_mode else "privacy mode: off"
     if settings.offline_mode:
         cache_meta = CacheSource().metadata()
         offline_note = (
@@ -443,7 +445,7 @@ def _footer_html(result: RunResult) -> str:
         link = f'<a href="{result.opik_url or opik_url()}" target="_blank" rel="noopener">view traces in Opik ↗</a>'
     if result.failed:
         details = "" if settings.offline_mode else " The trace has details."
-        body = f"⚠ run failed — {escape(result.error_message)}.{details} · {link}"
+        body = f"run failed — {escape(result.error_message)}.{details} · {link} · {privacy_note}"
     else:
         sources = escape(", ".join(result.jobs_sources) or "none")
         sep = ' <span class="js-muted">·</span> '
@@ -462,7 +464,7 @@ def _footer_html(result: RunResult) -> str:
         body = (
             f'<span class="js-meta-mono">${result.cost_usd:.4f}</span>{sep}'
             f'<span class="js-meta-mono">{result.latency_s}s</span>{sep}'
-            f"source: {sources}{sep}{query_meta}{sep}{ranking_meta}{sep}{link}"
+            f"source: {sources}{sep}{query_meta}{sep}{ranking_meta}{sep}{link}{sep}{privacy_note}"
         )
     return f'<div class="js-footer">{body}</div>'
 
@@ -476,30 +478,35 @@ def _status(text: str, error: bool = False) -> str:
 def on_upload(file_path: str | None, thread_id: str):
     """Step 1 → 2: read the resume, extract the profile, and reveal the profile page.
 
-    Outputs: (page_start, page_profile, profile_html, cv_text_state, start_status, profile_state).
+    Outputs: (page_start, page_profile, profile_html, start_status, profile_state).
     """
     stay = gr.update(visible=True), gr.update(visible=False)
     go = gr.update(visible=False), gr.update(visible=True)
 
     if not file_path:
-        yield (*stay, gr.update(), "", _status("Please drop a PDF resume.", error=True), None)
+        yield (*stay, gr.update(), _status("Please drop a PDF resume.", error=True), None)
         return
     try:
         cv_text = extract_cv_text(file_path)
     except CVReadError as exc:
-        yield (*stay, gr.update(), "", _status(f"Could not read that PDF: {exc}", error=True), None)
+        yield (*stay, gr.update(), _status(f"Could not read that PDF: {exc}", error=True), None)
         return
+    finally:
+        if get_settings().privacy_mode:
+            delete_temporary_upload(file_path)
 
-    yield (*go, _loading_html("Reading your resume…"), cv_text, "", gr.update())
+    yield (*go, _loading_html("Reading your resume…"), "", gr.update())
     try:
         profile = extract_profile(cv_text, thread_id=thread_id, tags=["phase-1", "ui", "extract"])
     except Exception as exc:  # noqa: BLE001 - show a friendly error and return to start
-        yield (*stay, gr.update(), "", _status(f"Couldn't read a profile: {exc}", error=True), None)
+        cv_text = ""
+        yield (*stay, gr.update(), _status(f"Couldn't read a profile: {exc}", error=True), None)
         return
-    yield (*go, _profile_html(profile), cv_text, "", profile)
+    cv_text = ""
+    yield (*go, _profile_html(profile), "", profile)
 
 
-def on_find(cv_text: str, profile: Profile | None, thread_id: str):
+def on_find(profile: Profile | None, thread_id: str):
     """Step 2 → 3: run the job-finding graph for the extracted profile and stream results.
 
     Outputs: (page_profile, page_results, results_html, footer_html).
@@ -511,7 +518,7 @@ def on_find(cv_text: str, profile: Profile | None, thread_id: str):
 
     yield (*go, _loading_html("Searching for jobs…"), "")
     result = RunResult()
-    for kind, payload in stream_search(profile, cv_text=cv_text, thread_id=thread_id, tags=["phase-1", "ui"]):
+    for kind, payload in stream_search(profile, thread_id=thread_id, tags=["phase-1", "ui"]):
         if kind == "status":
             yield (*go, _loading_html(str(payload)), "")
         elif kind == "result":
@@ -523,15 +530,14 @@ def on_find(cv_text: str, profile: Profile | None, thread_id: str):
 def reset():
     """Return to step 1 and clear the wizard.
 
-    Outputs: (page_start, page_profile, page_results, cv_file, cv_text_state,
-    start_status, results_html, footer_html).
+    Outputs: (page_start, page_profile, page_results, cv_file, start_status,
+    results_html, footer_html).
     """
     return (
         gr.update(visible=True),
         gr.update(visible=False),
         gr.update(visible=False),
         None,
-        "",
         "",
         "",
         "",
@@ -543,10 +549,11 @@ def build_app() -> gr.Blocks:
     register_prompts()
     settings = get_settings()
     mode_caption = "Offline mode: local model and cache only" if settings.offline_mode else CAPTION
+    if settings.privacy_mode:
+        mode_caption = f"{mode_caption} | Privacy mode: resume data minimized"
 
     with gr.Blocks(title="the-agent-that-got-me-rejected", theme=THEME, css=CSS) as demo:
         thread_id = gr.State(lambda: str(uuid4()))
-        cv_text_state = gr.State("")
         profile_state = gr.State(None)
 
         gr.HTML(
@@ -577,14 +584,14 @@ def build_app() -> gr.Blocks:
         cv_file.upload(
             on_upload,
             inputs=[cv_file, thread_id],
-            outputs=[page_start, page_profile, profile_out, cv_text_state, start_status, profile_state],
+            outputs=[page_start, page_profile, profile_out, start_status, profile_state],
         )
         find_btn.click(
             on_find,
-            inputs=[cv_text_state, profile_state, thread_id],
+            inputs=[profile_state, thread_id],
             outputs=[page_profile, page_results, results_out, footer_out],
         )
-        reset_outputs = [page_start, page_profile, page_results, cv_file, cv_text_state, start_status, results_out, footer_out]
+        reset_outputs = [page_start, page_profile, page_results, cv_file, start_status, results_out, footer_out]
         change_btn.click(reset, outputs=reset_outputs)
         restart_btn.click(reset, outputs=reset_outputs)
 

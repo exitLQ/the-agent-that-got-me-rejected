@@ -50,6 +50,7 @@ def test_search_passes_profile_and_nulls_selected_job_id(monkeypatch, sample_pro
 
     assert fake.captured_inputs["profile"] is sample_profile
     assert fake.captured_inputs["selected_job_id"] is None
+    assert "cv_text" not in fake.captured_inputs
 
 
 def test_stream_search_yields_result(monkeypatch, sample_profile):

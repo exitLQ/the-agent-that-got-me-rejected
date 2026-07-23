@@ -4,6 +4,10 @@ the-agent-that-got-me-rejected can optionally trace runs in
 [Opik](https://www.comet.com/docs/opik/). This integration is not required for
 local development.
 
+Opik is disabled while `PRIVACY_MODE=true`. Enabling cloud tracing is an
+explicit privacy decision and requires both `OFFLINE_MODE=false` and
+`PRIVACY_MODE=false`.
+
 ## 1. Account & keys
 
 1. Sign up at [comet.com](https://www.comet.com/) (free tier is enough).
@@ -14,6 +18,8 @@ local development.
    OPIK_WORKSPACE=your-workspace
    OPIK_PROJECT_NAME=the-agent-that-got-me-rejected
    OPIK_ENABLED=true
+   OFFLINE_MODE=false
+   PRIVACY_MODE=false
    ```
 
 Pinned SDK version: **opik 2.1.x** (see `pyproject.toml`). Opik ships weekly; if
@@ -29,7 +35,7 @@ Each run wraps the compiled graph with `track_langgraph`, which:
 - Enables **Show Agent Graph** in the trace sidebar (graph auto-extracted).
 - Auto-computes **per-run cost** for OpenAI models (e.g. gpt-4o-mini).
 
-Per run we also attach:
+When privacy mode is explicitly disabled, each run can also attach:
 
 - **The uploaded CV PDF** as a trace attachment (`attach_cv`) for optional
   PDF-aware evaluation.

@@ -17,7 +17,8 @@ flowchart TB
   end
 
   UI -->|"filepath"| CVR["cv_reader.py<br/>pypdf: PDF → text"]
-  CVR -->|"CV text"| EP["profile.py · extract_profile<br/>1 LLM call · structured output"]
+  CVR -->|"transient CV text"| EP["profile.py · extract_profile<br/>1 LLM call · structured output"]
+  CVR -->|"delete temporary UI copy"| DEL["privacy.py<br/>temp-boundary deletion"]
   EP -->|"Profile"| RUN
 
   subgraph ORCH["runner.py · orchestrator (UI + batch share it)"]
@@ -60,14 +61,14 @@ flowchart TB
   subgraph OBS["Opik observability · tracing.py"]
     TR["track_langgraph + OpikTracer<br/>span tree · agent graph · per-run cost"]
     PL["prompt library<br/>3 prompts, versioned"]
-    AT["CV attached to trace"]
+    AT["CV attachment<br/>privacy mode must be off"]
   end
   RUN -. "wrap + traces" .-> TR
   G -. "spans" .-> TR
   EP -. "register" .-> PL
-  CVR -. "PDF" .-> AT
+  CVR -. "PDF only when privacy is off" .-> AT
 
-  CFG["config.py · Settings<br/>SecretStr keys · SCOUT_MODEL · budget=25"] -. "config" .-> RUN
+  CFG["config.py · Settings<br/>SecretStr keys · privacy/offline boundaries · budget=25"] -. "config" .-> RUN
 
   classDef llm fill:#e8f0fe,stroke:#4285f4,color:#111;
   classDef obs fill:#e6f4ea,stroke:#137333,color:#111;
@@ -81,7 +82,9 @@ flowchart TB
 
 1. **Upload → text → profile.** The Gradio wizard hands the PDF to `cv_reader`
    (pypdf), then `extract_profile` turns the text into a typed `Profile` with one
-   structured-output LLM call — *before* the graph, so it's extracted once.
+   structured-output LLM call before the graph, so it is extracted once. In
+   privacy mode the temporary UI upload is deleted after reading, and raw text
+   is not stored in Gradio state or passed into LangGraph.
 2. **The agent graph.** `runner.py` feeds the profile into the LangGraph:
    `fetch_jobs` (the LLM chooses the search arguments) → `rank_jobs` (batched
    model assessment plus deterministic skill, role, seniority, and location
@@ -106,5 +109,7 @@ flowchart TB
    fallbacks; known geographical mismatches are removed before LLM ranking.
 6. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
    (provider-agnostic + a per-run call budget). **Opik** is available only when
-   offline mode is disabled and tracing is explicitly configured. `config.py`
-   supplies keys, the offline boundary, and other settings.
+   both offline mode and privacy mode are disabled and tracing is explicitly
+   configured. Privacy mode also blocks PDF attachments and excludes the
+   candidate name from ranking prompts. `config.py` supplies keys, both
+   boundaries, and other settings.

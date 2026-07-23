@@ -76,6 +76,7 @@ The default `.env.example` configuration is:
 SCOUT_MODEL=ollama:qwen3:8b
 OLLAMA_BASE_URL=http://localhost:11434
 OFFLINE_MODE=true
+PRIVACY_MODE=true
 OPIK_ENABLED=false
 ```
 
@@ -93,6 +94,7 @@ SCOUT_TAILOR_MODEL=ollama:qwen3:8b
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HEALTH_TIMEOUT=3
 OFFLINE_MODE=true
+PRIVACY_MODE=true
 ```
 
 Then install the extra and pull the model:
@@ -841,6 +843,103 @@ without relying on fragile wall-clock thresholds. Tests also verify sequential
 mode, worker bounds, LLM-call accounting, batch-failure isolation,
 cross-batch identifier isolation, deterministic-only fallback, runner metric
 propagation, and footer rendering.
+
+## Privacy mode
+
+### What was implemented
+
+Privacy mode is enabled by default:
+
+```dotenv
+PRIVACY_MODE=true
+```
+
+The implementation minimizes resume data at each boundary:
+
+- the Gradio upload callback reads the temporary PDF and then immediately
+  attempts to delete that temporary copy;
+- deletion is allowed only below the operating system temporary directory, so
+  an arbitrary source path cannot be removed;
+- raw CV text exists only long enough to extract the structured `Profile`;
+- raw CV text is never written to Gradio state or LangGraph checkpoint state;
+- the candidate name is omitted from job-ranking prompts because it has no
+  relevance to job fit;
+- Opik configuration, traces, prompt registration, and PDF attachments are
+  disabled while privacy mode is active; and
+- the interface footer confirms that raw resume data was discarded.
+
+The batch runner never deletes the path supplied with `--cv`. A command-line
+path is treated as a user-owned original, not a Gradio temporary upload.
+
+### Data lifecycle
+
+| Data | During extraction | During search | After the UI callback |
+|---|---|---|---|
+| Temporary uploaded PDF | Read locally by `pypdf` | Not required | Deleted when inside the OS temporary tree |
+| Raw extracted CV text | Passed to the configured extraction model | Not passed to LangGraph | Released and not stored in Gradio state |
+| Candidate name | Extracted for the local profile card | Excluded from ranking prompts | Remains in current structured UI state |
+| Structured profile | Created from the CV | Used for search and scoring | Remains until the wizard is reset |
+| Ranked jobs and metrics | Not present | Produced by the graph | Remain visible in the current session |
+| Cloud traces and attachments | Disabled | Disabled | Nothing is uploaded |
+
+With the default `SCOUT_MODEL=ollama:qwen3:8b`, profile extraction is sent only
+to the configured local Ollama server. Privacy mode does not convert a cloud
+model into a local one. If `SCOUT_MODEL` is changed to an external provider, CV
+text must be sent to that provider for extraction. Use Ollama on `localhost`
+for the documented local privacy boundary.
+
+### Interaction with offline mode and Opik
+
+Privacy mode and offline mode are separate safeguards:
+
+- `OFFLINE_MODE=true` prevents live job-provider calls and cloud tracing.
+- `PRIVACY_MODE=true` minimizes resume retention and independently prevents
+  cloud tracing and CV attachments.
+
+Opik is active only when all of these conditions are met:
+
+```text
+OFFLINE_MODE=false
+PRIVACY_MODE=false
+OPIK_ENABLED=true
+OPIK_API_KEY is configured
+```
+
+To intentionally use Opik, explicitly set:
+
+```dotenv
+OFFLINE_MODE=false
+PRIVACY_MODE=false
+OPIK_ENABLED=true
+```
+
+Disabling privacy mode does not make file deletion broader. The application
+still does not delete command-line source files.
+
+### Guarantees and limits
+
+Privacy mode is application-level data minimization. It does not provide disk
+encryption, secure erasure from solid-state storage, operating-system swap
+protection, browser-cache control, malware protection, or automatic removal of
+structured profile and result data shown in an active browser session. Use
+full-disk encryption and a trusted local machine for sensitive resumes.
+
+If the operating system refuses deletion because a file is locked, the helper
+returns without deleting another path. The original CV selected in the browser
+is not modified; Gradio supplies a temporary copy to the application.
+
+### Verification
+
+Run the dedicated privacy tests:
+
+```bash
+uv run pytest tests/test_privacy.py tests/test_runner.py
+```
+
+They verify the default, Opik override, absence of CV text from graph input,
+both attachment guards, removal of the candidate name from ranking prompts,
+temporary upload deletion, and refusal to delete paths outside the temporary
+boundary.
 
 ## Run the application
 
