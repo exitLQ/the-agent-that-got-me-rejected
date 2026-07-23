@@ -12,8 +12,8 @@ RANK_JOBS_PROMPT = """You are a job matching assistant. Given a candidate profil
 For each job, return:
 - fit_score: an integer from 0 to 100 for your qualitative assessment of how well the job matches the candidate. This is one input to a transparent hybrid score, not the final displayed score.
 - fit_explanation: 2-4 sentences explaining the score, covering why it matches and where the gaps are.
-- matched_skills: the candidate's skills that are relevant to this job.
-- gaps: requirements the candidate seems to lack.
+- matched_skills: only candidate skills explicitly present in both the profile and the job text. Never infer an unstated skill.
+- gaps: only technologies explicitly required by the job text and absent from the candidate profile. Never infer an unstated requirement.
 
 Candidate profile:
 {profile}

@@ -120,6 +120,31 @@ def test_rank_jobs_uses_job_id_as_final_tie_break(monkeypatch, sample_profile):
     assert [ranked.job.job_id for ranked in out["ranked_jobs"]] == ["a-job", "z-job"]
 
 
+def test_rank_jobs_replaces_ungrounded_model_skill_claims(monkeypatch, sample_profile):
+    job = make_job("grounded", "Data Scientist", "Acme")
+    job.description = "Python skills and AWS experience are required."
+    result = JobScores(
+        scores=[
+            JobScore(
+                job_id=job.job_id,
+                fit_score=80,
+                fit_explanation="Assessment.",
+                matched_skills=["Quantum Computing"],
+                gaps=["Public speaking"],
+            )
+        ]
+    )
+    monkeypatch.setattr(rank_mod, "get_chat_model", lambda *a, **k: structured_llm(result))
+
+    out = rank_jobs({"profile": sample_profile, "jobs": [job], "llm_calls": 0})
+    ranked = out["ranked_jobs"][0]
+
+    assert ranked.matched_skills == ["python"]
+    assert ranked.gaps == ["AWS"]
+    assert ranked.matched_skill_evidence[0].job_evidence.startswith("description:")
+    assert ranked.gap_evidence[0].profile_evidence == "not present in profile.skills"
+
+
 def test_reformulate_increments_counter(monkeypatch, sample_profile):
     monkeypatch.setattr(reformulate_mod, "get_chat_model", lambda *a, **k: plain_llm("data analyst"))
     state = {"profile": sample_profile, "search_query": "data scientist", "reformulation_count": 0, "llm_calls": 3}

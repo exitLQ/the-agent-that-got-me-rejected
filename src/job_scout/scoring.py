@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from dataclasses import dataclass
 
 from job_scout.graph.schemas import JobPosting, Profile
+from job_scout.grounding import ground_skill_evidence, profile_skill_group_count
+from job_scout.matching import normalize_match_text
 from job_scout.tools.jobs_api import location_match_rank
 
 DETERMINISTIC_WEIGHT = 0.60
@@ -17,13 +17,6 @@ ROLE_WEIGHT = 0.30
 SENIORITY_WEIGHT = 0.15
 LOCATION_WEIGHT = 0.15
 
-_SPECIAL_TERMS = {
-    ".net": " dotnet ",
-    "c#": " csharp ",
-    "c++": " cplusplus ",
-    "node.js": " nodejs ",
-    "scikit-learn": " scikitlearn ",
-}
 _ROLE_NOISE = {
     "associate",
     "entry",
@@ -49,37 +42,28 @@ class DeterministicComponents:
     total: int
 
 
-def _normalize(value: str) -> str:
-    """Normalize prose while preserving common technical terms."""
-    text = value.casefold()
-    for source, replacement in _SPECIAL_TERMS.items():
-        text = text.replace(source, replacement)
-    decomposed = unicodedata.normalize("NFKD", text)
-    ascii_text = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_text).split())
-
-
-def _phrase_present(phrase: str, text: str) -> bool:
-    normalized = _normalize(phrase)
-    if not normalized:
-        return False
-    return bool(re.search(rf"(?:^| ){re.escape(normalized)}(?: |$)", text))
-
-
-def _skill_score(profile: Profile, job: JobPosting) -> int:
+def _skill_score(
+    profile: Profile,
+    job: JobPosting,
+    grounded_skill_count: int | None = None,
+) -> int:
     """Score how many of the candidate's first-class skills occur in the job."""
-    skills_by_key = {_normalize(skill): skill for skill in profile.skills if _normalize(skill)}
-    skills = list(skills_by_key.values())
-    if not skills:
+    skill_count = profile_skill_group_count(profile)
+    if not skill_count:
         return 50
-    job_text = _normalize(f"{job.title} {job.description} {' '.join(job.tags)}")
-    matches = sum(_phrase_present(skill, job_text) for skill in skills)
-    denominator = min(len(skills), 5)
-    return min(100, round(100 * matches / denominator))
+    if grounded_skill_count is None:
+        matches, _gaps = ground_skill_evidence(profile, job)
+        grounded_skill_count = len(matches)
+    denominator = min(skill_count, 5)
+    return min(100, round(100 * grounded_skill_count / denominator))
 
 
 def _role_tokens(value: str) -> set[str]:
-    return {token for token in _normalize(value).split() if token not in _ROLE_NOISE}
+    return {
+        token
+        for token in normalize_match_text(value).split()
+        if token not in _ROLE_NOISE
+    }
 
 
 def _role_score(profile: Profile, job: JobPosting) -> int:
@@ -96,7 +80,7 @@ def _role_score(profile: Profile, job: JobPosting) -> int:
 
 
 def _job_seniority(title: str) -> str:
-    normalized = set(_normalize(title).split())
+    normalized = set(normalize_match_text(title).split())
     if normalized & {"chief", "director", "head", "lead", "principal", "staff"}:
         return "lead"
     if normalized & {"senior", "sr"}:
@@ -135,9 +119,14 @@ def _location_score(profile: Profile, job: JobPosting) -> int:
     return {0: 0, 1: 60, 2: 65, 3: 90, 4: 100}[rank]
 
 
-def deterministic_components(profile: Profile, job: JobPosting) -> DeterministicComponents:
+def deterministic_components(
+    profile: Profile,
+    job: JobPosting,
+    *,
+    grounded_skill_count: int | None = None,
+) -> DeterministicComponents:
     """Calculate the fixed weighted rule score for one candidate and job."""
-    skills = _skill_score(profile, job)
+    skills = _skill_score(profile, job, grounded_skill_count)
     role = _role_score(profile, job)
     seniority = _seniority_score(profile, job)
     location = _location_score(profile, job)

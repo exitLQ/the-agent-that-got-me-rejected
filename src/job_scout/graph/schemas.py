@@ -71,6 +71,14 @@ class ScoreBreakdown(BaseModel):
     location: int = Field(ge=0, le=100)
 
 
+class SkillEvidence(BaseModel):
+    """A displayed skill claim with profile-side and job-side provenance."""
+
+    skill: str
+    profile_evidence: str
+    job_evidence: str
+
+
 class RankedJob(BaseModel):
     """A job scored against the candidate profile."""
 
@@ -80,6 +88,8 @@ class RankedJob(BaseModel):
     matched_skills: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     score_breakdown: ScoreBreakdown | None = None
+    matched_skill_evidence: list[SkillEvidence] = Field(default_factory=list)
+    gap_evidence: list[SkillEvidence] = Field(default_factory=list)
 
 
 class EmphasisItem(BaseModel):

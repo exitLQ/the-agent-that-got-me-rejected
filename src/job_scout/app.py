@@ -15,7 +15,7 @@ from uuid import uuid4
 import gradio as gr
 
 from job_scout.config import get_settings
-from job_scout.graph.schemas import Profile, RankedJob
+from job_scout.graph.schemas import Profile, RankedJob, SkillEvidence
 from job_scout.llm import OllamaRuntimeError, validate_ollama_runtime
 from job_scout.profile import extract_profile
 from job_scout.runner import RunResult, stream_search
@@ -205,6 +205,10 @@ body::after {
   padding: 3px 10px; border-radius: 999px; line-height: 1.5; }
 .js-chip-match { background: rgba(14,110,74,0.11); color: var(--js-accent); }
 .js-chip-gap { background: rgba(100,116,139,0.13); color: var(--body-text-color-subdued); }
+.js-evidence { margin-top: 10px; color: var(--body-text-color-subdued); font-size: 0.75rem; }
+.js-evidence summary { cursor: pointer; font-weight: 600; }
+.js-evidence ul { margin: 6px 0 0; padding-left: 18px; }
+.js-evidence li { margin: 4px 0; line-height: 1.45; }
 
 /* --- Fit gauge --- */
 .js-fit-ring { --size: 56px; width: var(--size); height: var(--size); flex: none;
@@ -289,6 +293,23 @@ def _chips(items: list[str], kind: str, limit: int) -> str:
     return f'<div class="js-chips">{shown}</div>' if shown else ""
 
 
+def _evidence_html(matches: list[SkillEvidence], gaps: list[SkillEvidence]) -> str:
+    """Render expandable provenance for every displayed skill claim."""
+    rows = []
+    for kind, items in (("match", matches), ("gap", gaps)):
+        for item in items:
+            rows.append(
+                f"<li><b>{kind}: {escape(item.skill)}</b> — "
+                f"{escape(item.profile_evidence)} — {escape(item.job_evidence)}</li>"
+            )
+    if not rows:
+        return ""
+    return (
+        '<details class="js-evidence"><summary>Skill evidence</summary>'
+        f'<ul>{"".join(rows)}</ul></details>'
+    )
+
+
 def _profile_html(profile: Profile | None) -> str:
     """Render the extracted profile as a card."""
     if profile is None:
@@ -344,6 +365,10 @@ def _job_card(ranked: RankedJob, index: int) -> str:
     source = f'<span class="js-source">{escape(job.source)}</span>'
     matched = _chips(ranked.matched_skills, "match", 6)
     gaps = _chips(ranked.gaps, "gap", 4)
+    evidence = _evidence_html(
+        ranked.matched_skill_evidence[:6],
+        ranked.gap_evidence[:4],
+    )
     breakdown = ""
     if ranked.score_breakdown:
         score = ranked.score_breakdown
@@ -364,7 +389,7 @@ def _job_card(ranked: RankedJob, index: int) -> str:
         "</div>"
         f'<p class="js-job-why">{escape(ranked.fit_explanation)}</p>'
         f"{breakdown}"
-        f"{matched}{gaps}"
+        f"{matched}{gaps}{evidence}"
         "</div>"
     )
 

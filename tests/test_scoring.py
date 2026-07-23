@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from job_scout.app import _job_card
-from job_scout.graph.schemas import JobPosting, Profile, RankedJob, ScoreBreakdown
+from job_scout.graph.schemas import (
+    JobPosting,
+    Profile,
+    RankedJob,
+    ScoreBreakdown,
+    SkillEvidence,
+)
 from job_scout.scoring import deterministic_components, hybrid_score
 from tests.conftest import make_job
 
@@ -96,6 +102,14 @@ def test_result_card_exposes_score_breakdown():
             seniority=60,
             location=100,
         ),
+        matched_skills=["Python"],
+        matched_skill_evidence=[
+            SkillEvidence(
+                skill="Python",
+                profile_evidence="profile.skills: Python",
+                job_evidence="description: <script>alert(1)</script> Python required.",
+            )
+        ],
     )
 
     html = _job_card(ranked, 0)
@@ -103,4 +117,21 @@ def test_result_card_exposes_score_breakdown():
     assert "rules 74" in html
     assert "model 80" in html
     assert "skills 50" in html
+    assert "Skill evidence" in html
+    assert "<script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert 'aria-label="Hybrid fit score 76 out of 100"' in html
+
+
+def test_skill_score_uses_same_alias_grounding_as_display():
+    profile = Profile(skills=["ML", "Machine Learning"])
+    job = JobPosting(
+        job_id="ml",
+        title="Machine Learning Engineer",
+        company="Acme",
+        location="Berlin",
+        description="Build predictive systems.",
+        source="cache",
+    )
+
+    assert deterministic_components(profile, job).skills == 100

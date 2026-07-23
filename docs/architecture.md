@@ -30,7 +30,7 @@ flowchart TB
     direction TB
     S((START)) --> FJ
     FJ["fetch_jobs<br/>LLM picks search args via tool call"] --> RJ
-    RJ["rank_jobs<br/>batched model assessment + deterministic components<br/>hybrid = 60% rules + 40% model"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
+    RJ["rank_jobs<br/>batched model assessment + deterministic components<br/>grounded skills + hybrid score"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
     D -->|"no · under 2 loops"| RQ["reformulate_query<br/>broaden the query"]
     RQ --> FJ
     D -->|"yes · or cap hit"| E((END))
@@ -87,7 +87,9 @@ flowchart TB
    model assessment plus deterministic skill, role, seniority, and location
    components) → a conditional edge that either loops through
    `reformulate_query` (max 2) to broaden the search, or ends. The displayed
-   score uses 60% deterministic rules and 40% model assessment.
+   score uses 60% deterministic rules and 40% model assessment. Displayed skill
+   matches and gaps are reconstructed from profile and job evidence instead of
+   trusting the model lists directly.
 3. **Job sources.** `fetch_jobs` calls `run_search`. With `OFFLINE_MODE=true`,
    it returns directly from the committed cache and never initializes a live
    adapter. With offline mode disabled, it uses the JSearch → Adzuna → Remotive

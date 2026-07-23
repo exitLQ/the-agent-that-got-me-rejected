@@ -12,6 +12,7 @@ from job_scout.config import get_settings
 from job_scout.graph.prompts.rank_jobs import RANK_JOBS_PROMPT
 from job_scout.graph.schemas import JobPosting, JobScore, JobScores, Profile, RankedJob, ScoreBreakdown
 from job_scout.graph.state import AgentState
+from job_scout.grounding import ground_skill_evidence
 from job_scout.llm import ensure_budget, get_chat_model
 from job_scout.scoring import deterministic_components, hybrid_score
 
@@ -74,8 +75,13 @@ def rank_jobs(state: AgentState) -> dict:
 
     ranked: list[RankedJob] = []
     for job in jobs:
-        components = deterministic_components(profile, job)
         assessment = scores_by_id.get(job.job_id)
+        matched_evidence, gap_evidence = ground_skill_evidence(profile, job)
+        components = deterministic_components(
+            profile,
+            job,
+            grounded_skill_count=len(matched_evidence),
+        )
         llm_score = assessment.fit_score if assessment else components.total
         ranked.append(
             RankedJob(
@@ -86,8 +92,8 @@ def rank_jobs(state: AgentState) -> dict:
                     if assessment
                     else "The model returned no assessment for this job; the displayed fit uses deterministic signals only."
                 ),
-                matched_skills=assessment.matched_skills if assessment else [],
-                gaps=assessment.gaps if assessment else [],
+                matched_skills=[item.skill for item in matched_evidence],
+                gaps=[item.skill for item in gap_evidence],
                 score_breakdown=ScoreBreakdown(
                     llm=llm_score,
                     deterministic=components.total,
@@ -96,6 +102,8 @@ def rank_jobs(state: AgentState) -> dict:
                     seniority=components.seniority,
                     location=components.location,
                 ),
+                matched_skill_evidence=matched_evidence,
+                gap_evidence=gap_evidence,
             )
         )
 

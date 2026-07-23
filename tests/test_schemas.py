@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from job_scout.graph.schemas import JobPosting, RankedJob, ScoreBreakdown
+from job_scout.graph.schemas import JobPosting, RankedJob, ScoreBreakdown, SkillEvidence
 from tests.conftest import make_job
 
 
@@ -29,3 +29,16 @@ def test_score_breakdown_bounds():
     ScoreBreakdown(llm=0, deterministic=100, skills=50, role=50, seniority=50, location=50)
     with pytest.raises(ValidationError):
         ScoreBreakdown(llm=101, deterministic=100, skills=50, role=50, seniority=50, location=50)
+
+
+def test_skill_evidence_requires_both_provenance_fields():
+    SkillEvidence(
+        skill="Python",
+        profile_evidence="profile.skills: Python",
+        job_evidence="description: Python required.",
+    )
+    with pytest.raises(ValidationError):
+        SkillEvidence(
+            skill="Python",
+            profile_evidence="profile.skills: Python",
+        )

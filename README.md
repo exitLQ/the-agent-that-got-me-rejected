@@ -21,6 +21,7 @@ job applications.
 - Strict offline mode using the committed job cache by default
 - Optional live search through JSearch, Adzuna, and Remotive
 - Batched job-fit ranking with a transparent hybrid score
+- Evidence-backed matched skills and technology gaps
 - Gradio web interface
 - Optional Opik tracing
 - Offline fallback data for development and testing
@@ -384,7 +385,7 @@ deterministic score =
 
 | Component | Weight | Calculation |
 |---|---:|---|
-| Skills | 40% | Exact normalized profile-skill phrases found in the job title, description, or tags |
+| Skills | 40% | Canonical profile-skill groups grounded in the job title, description, or tags |
 | Role | 30% | Coverage of the best primary-role tokens by the job title |
 | Seniority | 15% | Distance between profile seniority and explicit title seniority |
 | Location | 15% | Exact city, eligible remote scope, same-country fallback, or mismatch |
@@ -467,9 +468,123 @@ batch behavior, and missing model assessments.
 
 ### Current boundary
 
-Point 4 uses exact normalized profile-skill phrases for the rule score. The
-model-provided `matched_skills` and `gaps` shown as text are not yet validated
-against evidence. That grounding work is intentionally handled in Point 5.
+The deterministic and model scores remain separate inputs. Evidence-backed
+skill labels are described below and use the same canonical matches as the
+skill component.
+
+## Skill grounding
+
+### Why grounding is required
+
+The ranking model returns suggested `matched_skills` and `gaps`, but generated
+lists can contain a plausible term that is absent from the CV, absent from the
+job, optional rather than required, or merely a spelling variant of an existing
+skill. Displaying those suggestions directly would make the result look more
+certain than its source data supports.
+
+The application now treats model skill lists as untrusted suggestions. A local,
+deterministic resolver reconstructs the displayed lists from evidence.
+
+### Grounded matches
+
+A matched skill is displayed only when:
+
+1. it exists in `profile.skills`; and
+2. the same canonical skill group occurs in the job title, description, or
+   tags.
+
+The displayed spelling comes from the candidate profile. If the profile says
+`ML` and the job says `machine learning`, the result displays `ML`, preserving
+what the CV actually claimed.
+
+Each match stores both provenance fields:
+
+```text
+profile.skills: <profile spelling>
+title|tag|description: <job evidence>
+```
+
+Skills present only in the profile are not shown as matches for an unrelated
+job. Skills claimed only by the model are discarded.
+
+### Grounded gaps
+
+A gap is displayed only for a technology in the controlled alias catalog when:
+
+1. the technology is not represented in `profile.skills`;
+2. it occurs in the job title, a job tag, or a description sentence with an
+   explicit requirement cue; and
+3. the evidence is not marked optional or negated.
+
+Requirement cues include terms such as `required`, `must`, `experience`,
+`knowledge`, `proficient`, and `skills`. Title and tag occurrences are treated
+as direct requirement evidence.
+
+Statements containing `optional`, `nice to have`, `bonus`, `not required`,
+`not need`, or `no experience` are not promoted to gaps. This conservative rule
+prefers omitting an uncertain gap over presenting an unsupported one.
+
+### Canonical aliases
+
+The resolver supports common equivalent forms, including:
+
+| Canonical group | Example aliases |
+|---|---|
+| Machine Learning | `machine learning`, `ML` |
+| AWS | `AWS`, `Amazon Web Services` |
+| GCP | `GCP`, `Google Cloud Platform` |
+| Kubernetes | `Kubernetes`, `k8s` |
+| PostgreSQL | `PostgreSQL`, `Postgres` |
+| JavaScript | `JavaScript`, `JS` |
+| Node.js | `Node.js`, `nodejs` |
+| scikit-learn | `scikit-learn`, `sklearn` |
+| C++, C#, .NET | punctuation-preserving normalized forms |
+
+Aliases use normalized word boundaries. For example, `JavaScript` does not
+create a false `Java` match. Duplicate aliases in a profile collapse to one
+canonical group and cannot inflate the skill score.
+
+Profile skills outside the controlled catalog are still eligible for exact
+normalized matching. Automatic gap discovery is intentionally limited to the
+catalog because an unknown word cannot safely be classified as a technology
+requirement.
+
+### Evidence in the interface
+
+Matched-skill and gap chips are derived from grounded evidence rather than
+copied from the model response. Every result card includes an expandable
+`Skill evidence` section containing:
+
+```text
+match: Python — profile.skills: Python — description: Python skills are required.
+gap: AWS — not present in profile.skills — tag: AWS
+```
+
+The evidence text is escaped before rendering. Older saved `RankedJob` objects
+without evidence remain valid because the new evidence fields default to empty
+lists.
+
+### Relationship to the hybrid score
+
+The Point 4 skill component now counts the same canonical, evidence-backed
+matches used by the interface. This prevents disagreement where an alias is
+visible as a match but absent from the numeric skill score.
+
+The model's free-text fit explanation remains a qualitative assessment. Skill
+chips and their evidence section are the authoritative factual claims.
+
+### Verification
+
+Run the grounding, scoring, node, and schema tests:
+
+```bash
+uv run pytest tests/test_grounding.py tests/test_scoring.py tests/test_nodes.py tests/test_schemas.py
+```
+
+They verify profile-and-job provenance, alias resolution, required technology
+gaps, optional and negated statements, title and tag evidence, Java versus
+JavaScript boundaries, model-hallucination replacement, schema requirements,
+UI evidence rendering, and score consistency.
 
 ## Run the application
 
@@ -531,7 +646,9 @@ src/job_scout/
   app.py              Gradio interface
   config.py           Environment configuration
   llm.py              Model initialization and call budget
+  matching.py         Shared punctuation-safe text normalization
   profile.py          CV-to-profile extraction
+  grounding.py        Evidence-backed skill matches and technology gaps
   scoring.py          Deterministic and hybrid fit-score calculation
   runner.py           Shared application and batch runner
   tracing.py          Optional Opik integration

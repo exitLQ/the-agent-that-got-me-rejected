@@ -142,6 +142,19 @@ The rule score combines skills, role, seniority, and location. The card lists
 all component values below the explanation. This makes differences between two
 results inspectable and helps identify incomplete CV or job data.
 
+### Reading skill evidence
+
+The matched-skill and gap chips are validated locally. Expand `Skill evidence`
+on a result card to inspect:
+
+- the exact `profile.skills` entry supporting a match;
+- the title, tag, or description excerpt supporting the job-side claim; and
+- confirmation that a displayed gap is absent from the profile.
+
+Optional or negated technologies are not shown as gaps. If a relevant
+technology is missing, the job may use an alias not yet present in the controlled
+catalog or may describe it without a clear requirement cue.
+
 ## 7. Development workflow
 
 Before committing:

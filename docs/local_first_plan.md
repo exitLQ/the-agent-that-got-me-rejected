@@ -109,6 +109,31 @@ Acceptance criteria:
 - Every displayed score can be reconstructed from documented values.
 - A malformed partial model response does not silently remove a fetched job.
 
+## Incremental improvement 5: Skill grounding
+
+Status: implemented.
+
+- Replaced direct display of model skill claims with deterministic evidence
+  resolution.
+- Required both profile-side and job-side provenance for matched skills.
+- Required job-side requirement evidence and profile absence for skill gaps.
+- Added canonical aliases for common languages, frameworks, cloud platforms,
+  data tools, and infrastructure tools.
+- Excluded optional and negated requirements from gaps.
+- Reused the grounded match set in the hybrid score's skill component.
+- Added expandable evidence to each result card.
+- Added tests for aliases, provenance, hallucinated claims, requirement cues,
+  negation, punctuation, schemas, UI rendering, and scoring consistency.
+
+Acceptance criteria:
+
+- No displayed matched skill exists only in the model response.
+- Every displayed match points to both a profile entry and job evidence.
+- Every displayed gap points to job requirement evidence and confirms profile
+  absence.
+- Alias spelling differences do not create duplicate or contradictory results.
+- Skill chips and the numeric skill component use the same match set.
+
 ## Phase 3: Local observability
 
 - Add a no-op tracer as the default.
