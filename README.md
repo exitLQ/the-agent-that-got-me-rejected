@@ -1,5 +1,7 @@
 # the-agent-that-got-me-rejected
 
+[![CI](https://github.com/exitLQ/the-agent-that-got-me-rejected/actions/workflows/ci.yml/badge.svg)](https://github.com/exitLQ/the-agent-that-got-me-rejected/actions/workflows/ci.yml)
+
 the-agent-that-got-me-rejected is a local-first AI job-matching agent maintained by
 [exitLQ](https://github.com/exitLQ).
 
@@ -1071,6 +1073,137 @@ own CV.
 For detailed operating-system instructions, configuration options, and common
 errors, see [Local setup](docs/local_setup.md).
 
+## Continuous integration and quality gates
+
+### Workflow coverage
+
+The GitHub Actions workflow is stored at `.github/workflows/ci.yml`. It runs:
+
+- for every push to `main`;
+- for every pull request; and
+- manually through `workflow_dispatch`.
+
+When a newer commit reaches the same branch or pull request, the older workflow
+run is cancelled. This avoids spending runner time on results that can no longer
+be merged.
+
+The single `Python 3.12 quality gate` job performs these steps:
+
+1. checks out the exact commit;
+2. installs `uv` and selects Python 3.12;
+3. installs the project, Ollama extra, and development dependencies from
+   `uv.lock`;
+4. runs Ruff without modifying files;
+5. runs the repository and documentation validator;
+6. runs the complete offline test suite;
+7. builds the Python package; and
+8. verifies executable permissions for the Linux and macOS launchers.
+
+The install and run commands use frozen lockfile behavior. A dependency change
+without a corresponding `uv.lock` update therefore fails CI instead of silently
+resolving a different environment.
+
+### Network and secret boundary
+
+Dependency and Action downloads require network access during CI setup. The
+application tests themselves are configured with:
+
+```yaml
+OFFLINE_MODE: "true"
+PRIVACY_MODE: "true"
+OPIK_ENABLED: "false"
+```
+
+All job-provider and Opik credentials are explicitly empty. The test fixtures
+mock model and network boundaries, so the workflow does not require repository
+secrets and does not spend model or job-provider credits.
+
+The workflow grants its `GITHUB_TOKEN` only `contents: read`. Checkout credential
+persistence is disabled. Third-party Actions are pinned to full 40-character
+commit SHAs with readable version comments, preventing a mutable version tag
+from changing the executed Action code.
+
+`.github/dependabot.yml` checks GitHub Action dependencies monthly and opens
+bounded update pull requests. Each update still has to pass the complete quality
+gate before merge.
+
+### Repository validator
+
+Run the validator directly:
+
+```bash
+uv run python scripts/check_repository.py
+```
+
+It enforces project-specific invariants that generic Python tools do not cover:
+
+- every required configuration, license, lock, launcher, and workflow file
+  exists;
+- README and files under `docs/` contain no emojis;
+- every relative Markdown link and image points to an existing path inside the
+  repository;
+- the complete sponsor block remains present exactly once;
+- every external Action reference uses a full commit SHA; and
+- `.env` remains untracked.
+
+The validator prints every discovered issue in one run and returns a nonzero
+exit status, making the same command suitable for local use and CI.
+
+### Reproducing CI locally
+
+On macOS or Linux with Make:
+
+```bash
+make check
+```
+
+The target verifies the lockfile, lints, validates the repository, runs tests,
+and builds the package.
+
+The equivalent cross-platform commands are:
+
+```bash
+uv lock --check
+uv run ruff check .
+uv run python scripts/check_repository.py
+uv run pytest
+uv build
+```
+
+CI itself adds `--frozen` to installation and execution commands. Locally,
+`uv lock --check` first gives a clearer error when `pyproject.toml` and
+`uv.lock` disagree.
+
+### Branch protection
+
+After the workflow has completed once on GitHub, repository maintainers can
+protect `main` and require the `Python 3.12 quality gate` status check before
+merge. Branch protection is a GitHub repository setting and is intentionally
+not changed by this code commit.
+
+### Failure guide
+
+| Failed step | Typical cause | Local command |
+|---|---|---|
+| Install locked dependencies | `pyproject.toml` changed without updating `uv.lock` | `uv lock --check` |
+| Lint | Import order, style, or static error | `uv run ruff check .` |
+| Validate repository and documentation | Broken link, emoji, sponsor change, unpinned Action, or tracked `.env` | `uv run python scripts/check_repository.py` |
+| Run offline test suite | Behavioral regression or external-call boundary violation | `uv run pytest` |
+| Build package | Invalid package metadata or missing source file | `uv build` |
+| Verify launcher permissions | Executable bit lost from a shell launcher | `git update-index --chmod=+x start.sh start.command` |
+
+### Verification
+
+Run only the CI policy tests:
+
+```bash
+uv run pytest tests/test_repository_checks.py
+```
+
+These tests prove that the current repository passes the validator, the
+workflow uses frozen and offline settings, Actions are SHA-pinned, the sponsor
+block is intact, documentation is emoji-free, and local links resolve.
+
 ## Verification
 
 Run the test suite:
@@ -1133,6 +1266,7 @@ data/
   fixture_cvs/        Synthetic test CVs
 docs/                 Architecture, setup, and roadmap
 scripts/
+  check_repository.py Repository and documentation policy checks
   start.py            Shared cross-platform setup and launch logic
   ...                 Batch and data-maintenance utilities
 start.ps1             Windows one-command launcher

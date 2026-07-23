@@ -261,10 +261,23 @@ between runs. Compare the ranking-only footer latency rather than total runtime.
 Before committing:
 
 ```bash
+uv lock --check
 uv run ruff check .
+uv run python scripts/check_repository.py
 uv run pytest
+uv build
 git status
 ```
+
+On macOS or Linux, the same quality sequence is available as:
+
+```bash
+make check
+```
+
+These commands reproduce the GitHub Actions quality gate. The repository
+validator checks required files, documentation links, the no-emoji rule, the
+sponsor block, immutable Action pins, and that `.env` is not tracked.
 
 Commit and push:
 
@@ -357,3 +370,26 @@ ollama pull qwen3:8b
 
 Stop the existing process that uses the port, or change the Gradio launch
 configuration in `src/job_scout/app.py`.
+
+### GitHub Actions fails during dependency installation
+
+Run:
+
+```bash
+uv lock --check
+```
+
+If the lockfile is outdated, regenerate it intentionally with `uv lock`, inspect
+the change, and rerun the complete local quality sequence. CI uses frozen
+installation and will not repair an outdated lockfile automatically.
+
+### GitHub Actions fails repository validation
+
+Run:
+
+```bash
+uv run python scripts/check_repository.py
+```
+
+The command reports every broken documentation link, emoji, required-file
+problem, sponsor-block change, unpinned Action, or tracked `.env` in one pass.

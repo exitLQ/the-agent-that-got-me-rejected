@@ -217,7 +217,7 @@ Acceptance criteria:
 
 ## Phase 5: Packaging
 
-Status: one-command operating-system launchers implemented.
+Status: one-command launchers and CI quality gates implemented.
 
 - Added `start.ps1` for Windows PowerShell.
 - Added `start.sh` for Linux.
@@ -228,7 +228,13 @@ Status: one-command operating-system launchers implemented.
 - Added check-only and explicit skip options.
 - Add a Docker Compose profile containing the app and Ollama.
 - Add a first-run setup wizard.
-- Add CI checks for offline installation, tests, and documentation.
+- Added a least-privilege GitHub Actions workflow for locked installation,
+  linting, repository validation, offline tests, package build, and launcher
+  permissions.
+- Added a local repository validator for required files, documentation links,
+  emoji policy, sponsor preservation, Action pinning, and secret-file tracking.
+- Added monthly bounded Dependabot updates for GitHub Action dependencies.
+- Added a local `make check` target matching the CI quality sequence.
 - Publish versioned releases with migration notes.
 
 Acceptance criteria:
@@ -238,7 +244,8 @@ Acceptance criteria:
   `uv` and Ollama are installed.
 - Repeated starts preserve `.env` and reuse installed dependencies and models.
 - The Docker setup starts without cloud credentials.
-- CI verifies that documentation commands remain valid.
+- CI verifies offline behavior and documentation invariants without external
+  service credentials.
 
 ## Recommended implementation order
 

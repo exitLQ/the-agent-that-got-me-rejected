@@ -32,6 +32,14 @@ fixtures: ## Regenerate the synthetic fixture CV PDFs
 test: ## Run the test suite
 	uv run pytest
 
+.PHONY: check
+check: ## Run the same local quality gates as CI
+	uv lock --check
+	uv run ruff check .
+	uv run python scripts/check_repository.py
+	uv run pytest
+	uv build
+
 .PHONY: lint
 lint: ## Lint with ruff
 	uv run ruff check .
