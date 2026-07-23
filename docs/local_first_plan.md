@@ -21,12 +21,14 @@ cloud tracing, or required network access. Live job providers remain optional.
 
 ## Phase 1: Local model provider
 
-- Add `langchain-ollama` as an optional dependency.
-- Introduce explicit provider validation during startup.
-- Add an Ollama health check with a clear error message.
-- Use a configurable local default such as `ollama:llama3.2`.
-- Confirm that structured output and tool calling work with the selected model.
-- Add provider-specific integration tests.
+Status: implemented.
+
+- Added `langchain-ollama` as an optional dependency.
+- Added explicit provider validation during startup.
+- Added an Ollama health check with clear error messages.
+- Set `ollama:qwen3:8b` as the configurable local default.
+- Reused the existing structured-output and tool-calling interfaces.
+- Added provider-specific integration tests with a mocked Ollama endpoint.
 
 Acceptance criteria:
 

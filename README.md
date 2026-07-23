@@ -30,10 +30,10 @@ job applications.
 - Windows, macOS, or Linux
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/)
-- An OpenAI API key for the current default model
+- [Ollama](https://ollama.com/download) for local inference
 
-Ollama-based fully local inference is part of the planned local-first migration.
-See [Local-first roadmap](docs/local_first_plan.md).
+OpenAI remains available as an optional provider, but it is no longer the
+default.
 
 ## Installation
 
@@ -44,10 +44,10 @@ git clone https://github.com/exitLQ/the-agent-that-got-me-rejected.git
 cd the-agent-that-got-me-rejected
 ```
 
-Install the project:
+Install the project with local Ollama support:
 
 ```bash
-uv sync --all-groups
+uv sync --extra ollama --all-groups
 ```
 
 Create the local configuration:
@@ -62,18 +62,138 @@ On Windows PowerShell:
 Copy-Item .env.example .env
 ```
 
-Add at least the following value to `.env`:
+Pull the default local model:
+
+```bash
+ollama pull qwen3:8b
+```
+
+The default `.env.example` configuration is:
 
 ```dotenv
+SCOUT_MODEL=ollama:qwen3:8b
+OLLAMA_BASE_URL=http://localhost:11434
+OPIK_ENABLED=false
+```
+
+No OpenAI key is needed for this configuration. Job-source keys remain
+optional. Without them, search falls back to Remotive and the committed cache.
+
+### Updating an existing checkout
+
+If `.env` already exists from an older version, `uv sync` does not overwrite it.
+Update the model settings manually:
+
+```dotenv
+SCOUT_MODEL=ollama:qwen3:8b
+SCOUT_TAILOR_MODEL=ollama:qwen3:8b
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_HEALTH_TIMEOUT=3
+```
+
+Then install the extra and pull the model:
+
+```bash
+uv sync --extra ollama --all-groups
+ollama pull qwen3:8b
+```
+
+## Local Ollama integration
+
+### What was implemented
+
+The application now treats Ollama as a first-class model provider:
+
+- `langchain-ollama` is available through the `ollama` project extra.
+- `SCOUT_MODEL` and `SCOUT_TAILOR_MODEL` default to `ollama:qwen3:8b`.
+- `ChatOllama` is created directly instead of routing Ollama through an
+  OpenAI-compatible endpoint.
+- The same model interface continues to support structured profile extraction,
+  tool selection, batched ranking, and query reformulation.
+- The model client is cached after successful validation.
+
+### Startup validation
+
+Before the Gradio server starts, the application requests:
+
+```text
+GET http://localhost:11434/api/tags
+```
+
+This is Ollama's local model-list endpoint. Startup continues only when:
+
+1. the Ollama service responds successfully; and
+2. the exact model configured in `SCOUT_MODEL` is installed.
+
+If Ollama is unavailable, startup exits with a message containing the configured
+URL. If the model is missing, the message provides the exact pull command:
+
+```bash
+ollama pull qwen3:8b
+```
+
+The health check applies only to `ollama:` model strings. OpenAI and other cloud
+providers do not trigger a request to the local Ollama endpoint.
+
+### Ollama configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `SCOUT_MODEL` | `ollama:qwen3:8b` | Main extraction, tool-calling, and ranking model |
+| `SCOUT_TAILOR_MODEL` | `ollama:qwen3:8b` | Reserved tailoring model |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_HEALTH_TIMEOUT` | `3` | Startup health-check timeout in seconds |
+
+For Ollama running on another machine:
+
+```dotenv
+OLLAMA_BASE_URL=http://192.168.1.50:11434
+```
+
+Do not expose an unauthenticated Ollama server directly to the public internet.
+
+### Switching back to OpenAI
+
+Install the normal dependencies and configure:
+
+```dotenv
+SCOUT_MODEL=openai:gpt-4o-mini
+SCOUT_TAILOR_MODEL=openai:gpt-4o-mini
 OPENAI_API_KEY=your-key
 ```
 
-All other service keys are optional. Without job-source keys, the search falls
-back to Remotive and the committed offline cache. Opik can be disabled:
+No source-code change is required.
 
-```dotenv
-OPIK_ENABLED=false
+### Verification
+
+List locally installed models:
+
+```bash
+ollama list
 ```
+
+Check the API directly:
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+Run the automated Ollama integration tests:
+
+```bash
+uv run pytest tests/test_llm.py
+```
+
+These tests mock the local endpoint. They verify successful startup validation,
+missing-model errors, unavailable-service errors, and that cloud models skip the
+Ollama check. They do not download a model.
+
+### Current scope
+
+This point adds local model inference and startup validation. It does not yet
+guarantee a network-isolated run because live job adapters may still call
+external services. Strict network isolation is Point 2 in the
+[local-first roadmap](docs/local_first_plan.md).
 
 ## Run the application
 
@@ -148,7 +268,7 @@ tests/                Offline automated tests
 ## Common commands
 
 ```bash
-uv sync --all-groups
+uv sync --extra ollama --all-groups
 uv run python -m job_scout.app
 uv run pytest
 uv run ruff check .
@@ -162,7 +282,9 @@ Important environment variables:
 | Variable | Purpose | Required |
 |---|---|---|
 | `SCOUT_MODEL` | Model used for extraction, search decisions, and ranking | Yes |
-| `OPENAI_API_KEY` | Authentication for the default OpenAI model | For default model |
+| `OLLAMA_BASE_URL` | Local Ollama service URL | For Ollama |
+| `OLLAMA_HEALTH_TIMEOUT` | Ollama startup-check timeout | No |
+| `OPENAI_API_KEY` | Authentication for an optional OpenAI model | For OpenAI |
 | `OPIK_ENABLED` | Enables or disables external tracing | No |
 | `JSEARCH_API_KEY` | Enables live JSearch results | No |
 | `ADZUNA_APP_ID` | Enables Adzuna with `ADZUNA_APP_KEY` | No |

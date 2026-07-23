@@ -23,8 +23,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    scout_model: str = Field(default="openai:gpt-4o-mini", alias="SCOUT_MODEL")
-    scout_tailor_model: str = Field(default="openai:gpt-4o-mini", alias="SCOUT_TAILOR_MODEL")
+    scout_model: str = Field(default="ollama:qwen3:8b", alias="SCOUT_MODEL")
+    scout_tailor_model: str = Field(default="ollama:qwen3:8b", alias="SCOUT_TAILOR_MODEL")
+    ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
+    ollama_health_timeout: float = Field(default=3.0, alias="OLLAMA_HEALTH_TIMEOUT")
 
     openai_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENAI_API_KEY")
 
@@ -39,7 +41,14 @@ class Settings(BaseSettings):
 
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
 
-    @field_validator("opik_workspace", "opik_project_name", "scout_model", "scout_tailor_model", mode="before")
+    @field_validator(
+        "opik_workspace",
+        "opik_project_name",
+        "scout_model",
+        "scout_tailor_model",
+        "ollama_base_url",
+        mode="before",
+    )
     @classmethod
     def _drop_inline_comment(cls, value: object) -> object:
         """Treat a value that is only a ``# comment`` as empty.

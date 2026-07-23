@@ -9,6 +9,7 @@ Install:
 - Git
 - Python 3.12
 - uv
+- Ollama
 
 Confirm the tools are available:
 
@@ -30,7 +31,7 @@ cd the-agent-that-got-me-rejected
 ## 3. Install dependencies
 
 ```bash
-uv sync --all-groups
+uv sync --extra ollama --all-groups
 ```
 
 On Windows, if the global uv cache is not writable:
@@ -38,7 +39,7 @@ On Windows, if the global uv cache is not writable:
 ```powershell
 $env:UV_CACHE_DIR="$PWD\.uv-cache"
 $env:UV_PYTHON_INSTALL_DIR="$PWD\.uv-python"
-uv sync --all-groups
+uv sync --extra ollama --all-groups
 ```
 
 ## 4. Configure the application
@@ -55,11 +56,17 @@ Windows PowerShell:
 Copy-Item .env.example .env
 ```
 
-Minimal configuration for the current default model:
+Pull the default model:
+
+```bash
+ollama pull qwen3:8b
+```
+
+Minimal local model configuration:
 
 ```dotenv
-SCOUT_MODEL=openai:gpt-4o-mini
-OPENAI_API_KEY=your-key
+SCOUT_MODEL=ollama:qwen3:8b
+OLLAMA_BASE_URL=http://localhost:11434
 OPIK_ENABLED=false
 ```
 
@@ -138,6 +145,20 @@ only when external observability is desired.
 
 Confirm that the provider named by `SCOUT_MODEL` has a matching API key in
 `.env`. Restart the application after editing the file.
+
+### Ollama is not reachable
+
+Start Ollama and verify:
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+If the configured model is missing:
+
+```bash
+ollama pull qwen3:8b
+```
 
 ### Port 7860 is in use
 

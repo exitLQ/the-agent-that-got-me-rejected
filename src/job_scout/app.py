@@ -14,7 +14,9 @@ from uuid import uuid4
 
 import gradio as gr
 
+from job_scout.config import get_settings
 from job_scout.graph.schemas import Profile, RankedJob
+from job_scout.llm import OllamaRuntimeError, validate_ollama_runtime
 from job_scout.profile import extract_profile
 from job_scout.runner import RunResult, stream_search
 from job_scout.tools.cv_reader import CVReadError, extract_cv_text
@@ -506,6 +508,10 @@ def build_app() -> gr.Blocks:
 
 def main() -> None:
     """Launch the Gradio app."""
+    try:
+        validate_ollama_runtime(get_settings().scout_model)
+    except OllamaRuntimeError as exc:
+        raise SystemExit(f"Startup check failed: {exc}") from exc
     build_app().launch()
 
 

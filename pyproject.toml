@@ -34,9 +34,9 @@ dev = [
 ]
 
 [project.optional-dependencies]
-# Documented alternative provider (see .env.example). Install with:
-#   uv sync --extra groq
+# Optional model providers; see README.md and .env.example.
 groq = ["langchain-groq>=0.2"]
+ollama = ["langchain-ollama>=1.0"]
 
 [build-system]
 requires = ["hatchling"]
