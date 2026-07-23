@@ -49,12 +49,23 @@ _PROVIDER_PACKAGE = {
 def model_provider(model: str) -> str:
     """Return the normalized provider prefix from ``provider:model``."""
     provider, separator, name = model.partition(":")
-    return provider.casefold() if separator and name.strip() else ""
+    return provider.strip().casefold() if separator and name.strip() else ""
 
 
 def _ollama_model_name(model: str) -> str:
     """Return the Ollama model name without the LangChain provider prefix."""
-    return model.removeprefix("ollama:")
+    provider, separator, name = model.partition(":")
+    if separator and provider.strip().casefold() == "ollama":
+        return name.strip()
+    return model.strip()
+
+
+def _normalized_model(model: str) -> str:
+    """Normalize a valid provider prefix while preserving the model identifier."""
+    provider = model_provider(model)
+    if not provider:
+        return model.strip()
+    return f"{provider}:{model.partition(':')[2].strip()}"
 
 
 def validate_ollama_runtime(model: str) -> None:
@@ -63,7 +74,7 @@ def validate_ollama_runtime(model: str) -> None:
     The check uses Ollama's local ``GET /api/tags`` endpoint. Cloud providers
     return immediately without performing a network request.
     """
-    if not model.startswith("ollama:"):
+    if model_provider(model) != "ollama":
         return
 
     settings = get_settings()
@@ -176,7 +187,7 @@ def get_chat_model(model: str, temperature: float = 0.0) -> BaseChatModel:
             base_url=settings.ollama_base_url,
         )
     try:
-        return init_chat_model(model, temperature=temperature)
+        return init_chat_model(_normalized_model(model), temperature=temperature)
     except ImportError as exc:
         raise ModelConfigurationError(
             f"Support for provider '{provider}' is not installed. "

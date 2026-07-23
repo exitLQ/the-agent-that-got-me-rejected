@@ -21,6 +21,15 @@ def test_ci_uses_frozen_lockfile_and_offline_defaults():
     assert "permissions:\n  contents: read" in workflow
 
 
+def test_shared_test_fixture_keeps_the_ci_baseline_offline():
+    conftest = (checks.ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
+
+    assert 'os.environ["SCOUT_MODEL"] = "ollama:qwen3:8b"' in conftest
+    assert 'os.environ["OFFLINE_MODE"] = "true"' in conftest
+    assert 'os.environ["PRIVACY_MODE"] = "true"' in conftest
+    assert 'os.environ["CLOUD_LLM_ENABLED"] = "false"' in conftest
+
+
 def test_every_workflow_action_is_pinned_to_full_sha():
     assert checks.check_action_pins() == []
 

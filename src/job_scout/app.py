@@ -40,7 +40,7 @@ THEME = gr.themes.Soft(
     primary_hue=gr.themes.colors.emerald,
     secondary_hue=gr.themes.colors.stone,
     neutral_hue=gr.themes.colors.stone,
-    font=(gr.themes.GoogleFont("Public Sans"), "ui-sans-serif", "system-ui", "sans-serif"),
+    font=("Public Sans", "ui-sans-serif", "system-ui", "sans-serif"),
     radius_size=gr.themes.sizes.radius_md,
 ).set(
     body_background_fill="#FBFAF8",
@@ -431,7 +431,7 @@ def _query_audit_html(result: RunResult) -> str:
 
 
 def _footer_html(result: RunResult) -> str:
-    """Render the run footer: cost, latency, job source, and the Opik link."""
+    """Render run metadata and a trace link only when tracing is active."""
     settings = get_settings()
     privacy_note = "privacy: raw resume discarded" if settings.privacy_mode else "privacy mode: off"
     provider = model_provider(settings.scout_model)
@@ -447,10 +447,12 @@ def _footer_html(result: RunResult) -> str:
             f"file date {cache_meta['modified_date']}; results may be stale"
         )
         link = escape(offline_note)
-    else:
+    elif settings.has_opik:
         link = f'<a href="{result.opik_url or opik_url()}" target="_blank" rel="noopener">view traces in Opik ↗</a>'
+    else:
+        link = "tracing: disabled"
     if result.failed:
-        details = "" if settings.offline_mode else " The trace has details."
+        details = " The trace has details." if settings.has_opik else ""
         body = (
             f"run failed — {escape(result.error_message)}.{details} · "
             f"{link} · {privacy_note} · {model_note}"
@@ -583,7 +585,7 @@ def build_app() -> gr.Blocks:
         mode_caption = f"Online model: {provider} | External data transfer enabled"
     cloud_warning = _cloud_warning_html(settings.scout_model)
 
-    with gr.Blocks(title="the-agent-that-got-me-rejected", theme=THEME, css=CSS) as demo:
+    with gr.Blocks(title="the-agent-that-got-me-rejected") as demo:
         thread_id = gr.State(lambda: str(uuid4()))
         profile_state = gr.State(None)
 
@@ -637,7 +639,7 @@ def main() -> None:
         validate_model_configuration(get_settings().scout_model)
     except (ModelConfigurationError, OllamaRuntimeError) as exc:
         raise SystemExit(f"Startup check failed: {exc}") from exc
-    build_app().launch()
+    build_app().launch(theme=THEME, css=CSS)
 
 
 if __name__ == "__main__":

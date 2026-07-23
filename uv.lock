@@ -2533,7 +2533,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fpdf2", specifier = ">=2.8" },
-    { name = "gradio", specifier = ">=5" },
+    { name = "gradio", specifier = ">=6,<7" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "langchain", specifier = ">=0.3" },
     { name = "langchain-anthropic", marker = "extra == 'cloud'", specifier = ">=1.4" },

@@ -186,7 +186,13 @@ def test_falls_back_to_cache_when_live_sources_empty():
     adzuna = _fake_source("adzuna", [])
     remotive = _fake_source("remotive", [])
     cache = _fake_source("cache", [make_job("c1", "Data Scientist", "CacheCorp")])
-    jobs, used = run_search("data scientist", adzuna=adzuna, remotive=remotive, cache=cache)
+    jobs, used = run_search(
+        "data scientist",
+        adzuna=adzuna,
+        remotive=remotive,
+        cache=cache,
+        offline_mode=False,
+    )
     assert used == ["cache"]
     assert len(jobs) == 1
 
@@ -195,7 +201,13 @@ def test_cache_not_used_when_live_results_sufficient():
     adzuna = _fake_source("adzuna", [make_job(f"a{i}", f"Role {i}", f"Co{i}", "adzuna") for i in range(6)])
     remotive = _fake_source("remotive", [])
     cache = _fake_source("cache", [make_job("c1", "X", "Y")])
-    jobs, used = run_search("data scientist", adzuna=adzuna, remotive=remotive, cache=cache)
+    jobs, used = run_search(
+        "data scientist",
+        adzuna=adzuna,
+        remotive=remotive,
+        cache=cache,
+        offline_mode=False,
+    )
     assert used == ["adzuna"]
     cache.fetch.assert_not_called()
 
@@ -204,7 +216,13 @@ def test_remotive_queried_when_adzuna_thin():
     adzuna = _fake_source("adzuna", [make_job("a1", "One", "Co", "adzuna")])
     remotive = _fake_source("remotive", [make_job(f"r{i}", f"R{i}", f"Ro{i}", "remotive", True) for i in range(4)])
     cache = _fake_source("cache", [])
-    jobs, used = run_search("data scientist", adzuna=adzuna, remotive=remotive, cache=cache)
+    jobs, used = run_search(
+        "data scientist",
+        adzuna=adzuna,
+        remotive=remotive,
+        cache=cache,
+        offline_mode=False,
+    )
     assert used == ["adzuna", "remotive"]
     remotive.fetch.assert_called_once()
 
@@ -213,14 +231,27 @@ def test_remotive_queried_when_remote_requested():
     adzuna = _fake_source("adzuna", [make_job(f"a{i}", f"Role {i}", f"Co{i}", "adzuna") for i in range(6)])
     remotive = _fake_source("remotive", [make_job("r1", "Remote DS", "RemoteCo", "remotive", True)])
     cache = _fake_source("cache", [])
-    jobs, used = run_search("ds", remote=True, adzuna=adzuna, remotive=remotive, cache=cache)
+    jobs, used = run_search(
+        "ds",
+        remote=True,
+        adzuna=adzuna,
+        remotive=remotive,
+        cache=cache,
+        offline_mode=False,
+    )
     assert "remotive" in used
 
 
 def test_dedupe_by_title_company():
     dup = [make_job("a1", "Data Scientist", "Acme", "adzuna")] * 3
     adzuna = _fake_source("adzuna", dup + [make_job(f"a{i}", f"R{i}", f"C{i}", "adzuna") for i in range(5)])
-    jobs, _ = run_search("ds", adzuna=adzuna, remotive=_fake_source("r", []), cache=_fake_source("c", []))
+    jobs, _ = run_search(
+        "ds",
+        adzuna=adzuna,
+        remotive=_fake_source("r", []),
+        cache=_fake_source("c", []),
+        offline_mode=False,
+    )
     keys = [(j.title, j.company) for j in jobs]
     assert len(keys) == len(set(keys))
 
@@ -228,7 +259,14 @@ def test_dedupe_by_title_company():
 def test_result_cap():
     many = [make_job(f"a{i}", f"Role {i}", f"Co{i}", "adzuna") for i in range(40)]
     adzuna = _fake_source("adzuna", many)
-    jobs, _ = run_search("ds", limit=25, adzuna=adzuna, remotive=_fake_source("r", []), cache=_fake_source("c", []))
+    jobs, _ = run_search(
+        "ds",
+        limit=25,
+        adzuna=adzuna,
+        remotive=_fake_source("r", []),
+        cache=_fake_source("c", []),
+        offline_mode=False,
+    )
     assert len(jobs) == 25
 
 
@@ -285,14 +323,13 @@ def test_jsearch_primary_when_available():
         adzuna=adzuna,
         remotive=_fake_source("r", []),
         cache=_fake_source("c", []),
+        offline_mode=False,
     )
     assert used == ["jsearch"]
     adzuna.fetch.assert_not_called()  # JSearch returned enough; Adzuna skipped
 
 
-def test_cache_source_keyword_match(tmp_path):
-    import json
-
+def test_cache_source_keyword_match(monkeypatch):
     data = [
         {
             "job_id": "1",
@@ -317,9 +354,8 @@ def test_cache_source_keyword_match(tmp_path):
             "source": "cache",
         },
     ]
-    path = tmp_path / "cache.json"
-    path.write_text(json.dumps(data))
-    src = CacheSource(path=path)
+    src = CacheSource()
+    monkeypatch.setattr(src, "_load", lambda: data)
     jobs = src.fetch("machine learning python", None, None, False, 10)
     assert jobs[0].title == "Machine Learning Engineer"
     assert jobs[0].source == "cache"

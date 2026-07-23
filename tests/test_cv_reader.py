@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from job_scout.tools.cv_reader import CVReadError, extract_cv_text
@@ -27,8 +29,7 @@ def test_missing_file_raises():
         extract_cv_text(FIXTURE_CVS / "does_not_exist.pdf")
 
 
-def test_non_pdf_raises(tmp_path):
-    bad = tmp_path / "notpdf.pdf"
-    bad.write_text("this is not a pdf")
+def test_non_pdf_raises():
+    bad = Path(__file__)
     with pytest.raises(CVReadError):
         extract_cv_text(bad)

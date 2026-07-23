@@ -1380,6 +1380,54 @@ limit.
 
 See [Architecture](docs/architecture.md) for the detailed graph.
 
+## Post-review corrections
+
+The following corrections close the inconsistencies found during the code
+review. Each behavior has a regression test so future dependency or provider
+changes cannot silently restore the problem.
+
+### 1. Gradio 6 theme and CSS handling
+
+The project now requires Gradio 6 and passes the custom theme and CSS to
+`Blocks.launch()`, which is the supported Gradio 6 API. The previous
+`Blocks(theme=..., css=...)` form was accepted with a warning but ignored both
+values, leaving the interface on Gradio's default styling.
+
+### 2. Offline-safe fonts
+
+The interface uses a local CSS font stack. `Public Sans` is used only when it is
+already installed on the device, followed by the operating system's sans-serif
+fonts. The application does not create a Google Fonts stylesheet or make a font
+request during startup. The offline UI test verifies that both the custom CSS
+and the generated Gradio theme contain no external font stylesheet.
+
+### 3. Accurate tracing status
+
+The results footer links to Opik only when `Settings.has_opik` confirms that
+offline mode is disabled, privacy mode is disabled, Opik is enabled, and an
+Opik API key is present. Online model execution without tracing now displays
+`tracing: disabled`. Failed runs mention trace details only when a trace could
+actually have been created.
+
+### 4. A genuinely offline CI baseline
+
+The shared test configuration now starts with Ollama, offline mode, privacy
+mode, disabled cloud-model consent, empty provider credentials, and disabled
+Opik. Individual cloud-provider tests temporarily enable only the settings and
+dummy credentials they need. This preserves cloud integration coverage without
+overriding the workflow's offline boundary for the rest of the suite.
+
+### 5. Consistent provider-prefix normalization
+
+Provider prefixes are trimmed and compared case-insensitively before validation
+and model construction. Values such as `OLLAMA:qwen3:8b` and
+` OpenAI : gpt-5-mini ` are normalized to the canonical provider form. Ollama
+health checks, model-name extraction, credential validation, and LangChain
+initialization therefore operate on the same provider interpretation.
+
+The package metadata also describes the current local-first default and treats
+cloud models and tracing as optional capabilities.
+
 ## Project structure
 
 ```text

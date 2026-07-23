@@ -1,7 +1,7 @@
 [project]
 name = "the-agent-that-got-me-rejected"
 version = "0.1.0"
-description = "A LangGraph job-matching agent with full Opik observability."
+description = "A local-first LangGraph job-matching agent with optional cloud models and tracing."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
@@ -15,7 +15,7 @@ dependencies = [
     "opik>=2.1",
     # 1.92.0 does not publish a Windows wheel and falls back to a Rust build.
     "litellm<1.92",
-    "gradio>=5",
+    "gradio>=6,<7",
     "pypdf>=5",
     "pydantic>=2.11",
     "pydantic-settings>=2.6",

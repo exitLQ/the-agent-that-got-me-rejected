@@ -73,10 +73,40 @@ def test_get_chat_model_builds_chat_ollama(monkeypatch):
     get_chat_model.cache_clear()
 
 
+def test_ollama_provider_prefix_is_normalized(monkeypatch):
+    monkeypatch.setattr("job_scout.llm.validate_ollama_runtime", lambda model: None)
+    get_chat_model.cache_clear()
+
+    model = get_chat_model("OLLAMA:qwen3:8b")
+
+    assert isinstance(model, ChatOllama)
+    assert model.model == "qwen3:8b"
+    get_chat_model.cache_clear()
+
+
+def test_cloud_provider_prefix_is_normalized(monkeypatch):
+    monkeypatch.setenv("OFFLINE_MODE", "false")
+    monkeypatch.setenv("CLOUD_LLM_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+    get_settings.cache_clear()
+    get_chat_model.cache_clear()
+    calls = []
+    monkeypatch.setattr(
+        "job_scout.llm.init_chat_model",
+        lambda selected, temperature: calls.append((selected, temperature)) or object(),
+    )
+
+    get_chat_model(" OpenAI : gpt-5-mini ")
+
+    assert calls == [("openai:gpt-5-mini", 0.0)]
+    get_chat_model.cache_clear()
+
+
 @pytest.mark.parametrize(
     ("model", "provider"),
     [
         ("ollama:qwen3:8b", "ollama"),
+        ("OLLAMA:qwen3:8b", "ollama"),
         ("openai:gpt-5-mini", "openai"),
         ("anthropic:claude-sonnet-4-6", "anthropic"),
         ("xai:grok-4.3", "xai"),

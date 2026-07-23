@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import httpx
 
-from job_scout.app import CSS
+from job_scout.app import CSS, THEME
 from job_scout.config import Settings
 from job_scout.tools.jobs_api import CacheSource, run_search
 
@@ -61,3 +61,4 @@ def test_cache_metadata_is_available():
 def test_ui_css_has_no_external_font_import():
     assert "fonts.googleapis.com" not in CSS
     assert "@import url(" not in CSS
+    assert THEME._stylesheets == []
