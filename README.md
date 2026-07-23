@@ -306,3 +306,11 @@ Never commit `.env` or API keys.
 This project is distributed under the MIT License. See [LICENSE](LICENSE).
 The original copyright notice in that file is retained because the license
 requires it to remain in redistributed copies.
+
+<!-- hypertribe:sponsors:start -->
+## Sponsors
+
+[![the-agent-that-got-me-rejected Sponsors](https://api.tribe.run/tokens/GitYLyzVihz9dXk5QJkML4bcRn2s1qZ996BHZK7TvrKd/sponsors.svg)](https://tribe.run/token/GitYLyzVihz9dXk5QJkML4bcRn2s1qZ996BHZK7TvrKd)
+
+Become a sponsor on [Tribe.run](https://tribe.run/token/GitYLyzVihz9dXk5QJkML4bcRn2s1qZ996BHZK7TvrKd).
+<!-- hypertribe:sponsors:end -->
