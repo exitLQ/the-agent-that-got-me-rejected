@@ -18,7 +18,8 @@ job applications.
 
 - Typed CV profile extraction
 - LangGraph agent with a bounded search-reformulation loop
-- Job search through JSearch, Adzuna, Remotive, and an offline cache
+- Strict offline mode using the committed job cache by default
+- Optional live search through JSearch, Adzuna, and Remotive
 - Batched job-fit ranking
 - Gradio web interface
 - Optional Opik tracing
@@ -73,11 +74,12 @@ The default `.env.example` configuration is:
 ```dotenv
 SCOUT_MODEL=ollama:qwen3:8b
 OLLAMA_BASE_URL=http://localhost:11434
+OFFLINE_MODE=true
 OPIK_ENABLED=false
 ```
 
-No OpenAI key is needed for this configuration. Job-source keys remain
-optional. Without them, search falls back to Remotive and the committed cache.
+No OpenAI key or job-source key is needed for this configuration. With
+`OFFLINE_MODE=true`, job search uses only the committed cache.
 
 ### Updating an existing checkout
 
@@ -89,6 +91,7 @@ SCOUT_MODEL=ollama:qwen3:8b
 SCOUT_TAILOR_MODEL=ollama:qwen3:8b
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HEALTH_TIMEOUT=3
+OFFLINE_MODE=true
 ```
 
 Then install the extra and pull the model:
@@ -190,10 +193,91 @@ Ollama check. They do not download a model.
 
 ### Current scope
 
-This point adds local model inference and startup validation. It does not yet
-guarantee a network-isolated run because live job adapters may still call
-external services. Strict network isolation is Point 2 in the
-[local-first roadmap](docs/local_first_plan.md).
+Ollama supplies local model inference. Strict offline mode, described below,
+prevents job adapters and cloud tracing from making external requests.
+
+## Strict offline mode
+
+### What was implemented
+
+Strict offline mode is enabled by default with:
+
+```dotenv
+OFFLINE_MODE=true
+```
+
+In this mode the application:
+
+- searches only `data/cached_jobs.json`;
+- does not initialize or call JSearch, Adzuna, or Remotive;
+- disables Opik tracing even if an Opik API key is present;
+- loads no external font stylesheet in the Gradio interface; and
+- displays the cache job count and file date with a warning that cached results
+  may be stale.
+
+The local Ollama and Gradio connections still use HTTP on the loopback interface.
+In this project, offline means that the application makes no external network
+request during a run. The configured Ollama server should therefore remain on
+`localhost` when strict isolation is required.
+
+### Search behavior and stale data
+
+The offline search ranks committed cache entries by the words in the generated
+query, gives remote postings a small boost when remote work is requested,
+removes duplicates, and returns at most the requested limit. It never silently
+switches to a live provider. Precise cache location matching is intentionally
+reserved for Point 3 of the improvement plan.
+
+The interface footer reports:
+
+```text
+offline cache: <count> jobs, file date <YYYY-MM-DD>; results may be stale
+```
+
+The file date is the last-modified date of `data/cached_jobs.json`. It describes
+the cache file, not the publication date of every job. A small or old cache can
+produce few matches, and cached links may no longer be active.
+
+### Enabling live job sources
+
+Live providers are an explicit opt-in. Set:
+
+```dotenv
+OFFLINE_MODE=false
+```
+
+Then configure any desired provider:
+
+```dotenv
+JSEARCH_API_KEY=your-key
+ADZUNA_APP_ID=your-id
+ADZUNA_APP_KEY=your-key
+```
+
+With offline mode disabled, the cascade tries JSearch, Adzuna, Remotive, and
+finally the cache. Remotive does not require a key but is still an external
+service. To enable optional cloud tracing as well:
+
+```dotenv
+OFFLINE_MODE=false
+OPIK_ENABLED=true
+OPIK_API_KEY=your-key
+```
+
+`OPIK_ENABLED=true` has no effect while `OFFLINE_MODE=true`.
+
+### Offline verification
+
+Run the dedicated tests:
+
+```bash
+uv run pytest tests/test_offline_mode.py
+```
+
+They verify that live adapters are not called, an attempted job-search HTTP
+request fails the test, Opik remains disabled despite configured credentials,
+cache provenance is available, and the interface CSS contains no external font
+import.
 
 ## Run the application
 
@@ -239,9 +323,10 @@ Fetch jobs -> Rank jobs -> Enough strong matches?
                          Ranked results
 ```
 
-The model selects job-search arguments through a tool call. Search adapters then
-query available sources and fall back to cached data. Ranking runs in batches,
-and the graph can broaden a weak search up to a fixed limit.
+The model selects job-search arguments through a tool call. In the default
+offline mode, search reads only cached data. With offline mode disabled, the
+live adapters run before the cache fallback. Ranking runs in batches, and the
+graph can broaden a weak search up to a fixed limit.
 
 See [Architecture](docs/architecture.md) for the detailed graph.
 
@@ -284,6 +369,7 @@ Important environment variables:
 | `SCOUT_MODEL` | Model used for extraction, search decisions, and ranking | Yes |
 | `OLLAMA_BASE_URL` | Local Ollama service URL | For Ollama |
 | `OLLAMA_HEALTH_TIMEOUT` | Ollama startup-check timeout | No |
+| `OFFLINE_MODE` | Restricts job search and tracing to local resources | No |
 | `OPENAI_API_KEY` | Authentication for an optional OpenAI model | For OpenAI |
 | `OPIK_ENABLED` | Enables or disables external tracing | No |
 | `JSEARCH_API_KEY` | Enables live JSearch results | No |

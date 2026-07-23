@@ -67,19 +67,27 @@ Minimal local model configuration:
 ```dotenv
 SCOUT_MODEL=ollama:qwen3:8b
 OLLAMA_BASE_URL=http://localhost:11434
+OFFLINE_MODE=true
 OPIK_ENABLED=false
 ```
 
-Optional live job sources:
+This default uses the committed cache, disables every live job adapter, disables
+Opik, and avoids external font requests from the interface. Ollama and Gradio
+still communicate over the local loopback interface.
+
+Optional live job sources require explicit online mode:
 
 ```dotenv
+OFFLINE_MODE=false
 JSEARCH_API_KEY=
 ADZUNA_APP_ID=
 ADZUNA_APP_KEY=
 ```
 
-When these values are empty, the-agent-that-got-me-rejected uses the keyless Remotive adapter and the
-offline cache.
+When `OFFLINE_MODE=false`, the-agent-that-got-me-rejected tries configured
+providers, the keyless Remotive service, and then the cache. Empty provider keys
+do not restore strict offline behavior; use `OFFLINE_MODE=true` for that
+guarantee.
 
 ## 5. Verify the installation
 
@@ -90,6 +98,12 @@ uv run ruff check .
 
 The automated tests mock model and network calls and should not consume API
 credits.
+
+Verify strict offline behavior separately:
+
+```bash
+uv run pytest tests/test_offline_mode.py
+```
 
 ## 6. Start the interface
 
@@ -133,13 +147,16 @@ uv sync --python 3.12 --all-groups
 
 ### No live jobs
 
-This is expected when live-source credentials are not configured or a provider
-is unavailable. Cached results keep the application usable for development.
+Live jobs are intentionally disabled while `OFFLINE_MODE=true`. Set
+`OFFLINE_MODE=false` and restart the application to opt in to live providers.
+Cached results keep the application usable without them. The interface shows
+the cache count and file date because cached listings can be stale.
 
 ### No traces appear
 
-Tracing is optional. Set `OPIK_ENABLED=true` and configure the Opik credentials
-only when external observability is desired.
+Tracing is intentionally disabled while `OFFLINE_MODE=true`. To opt in to cloud
+tracing, set `OFFLINE_MODE=false`, set `OPIK_ENABLED=true`, configure the Opik
+credentials, and restart the application.
 
 ### Model authentication error
 

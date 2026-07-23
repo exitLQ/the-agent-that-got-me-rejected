@@ -20,6 +20,7 @@ from job_scout.llm import OllamaRuntimeError, validate_ollama_runtime
 from job_scout.profile import extract_profile
 from job_scout.runner import RunResult, stream_search
 from job_scout.tools.cv_reader import CVReadError, extract_cv_text
+from job_scout.tools.jobs_api import CacheSource
 from job_scout.tracing import opik_url, register_prompts
 
 CAPTION = "Prepares applications — never submits them."
@@ -55,8 +56,6 @@ THEME = gr.themes.Soft(
 _GRAIN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")"  # noqa: E501
 
 CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
-
 :root {
   --js-accent: #0E6E4A;
   --js-accent-bright: #0E9C68;
@@ -370,9 +369,19 @@ def _results_html(result: RunResult) -> str:
 
 def _footer_html(result: RunResult) -> str:
     """Render the run footer: cost, latency, job source, and the Opik link."""
-    link = f'<a href="{result.opik_url or opik_url()}" target="_blank" rel="noopener">view traces in Opik ↗</a>'
+    settings = get_settings()
+    if settings.offline_mode:
+        cache_meta = CacheSource().metadata()
+        offline_note = (
+            f"offline cache: {cache_meta['job_count']} jobs, "
+            f"file date {cache_meta['modified_date']}; results may be stale"
+        )
+        link = escape(offline_note)
+    else:
+        link = f'<a href="{result.opik_url or opik_url()}" target="_blank" rel="noopener">view traces in Opik ↗</a>'
     if result.failed:
-        body = f"⚠ run failed — {escape(result.error_message)}. The trace has details · {link}"
+        details = "" if settings.offline_mode else " The trace has details."
+        body = f"⚠ run failed — {escape(result.error_message)}.{details} · {link}"
     else:
         sources = escape(", ".join(result.jobs_sources) or "none")
         sep = ' <span class="js-muted">·</span> '
@@ -458,6 +467,8 @@ def reset():
 def build_app() -> gr.Blocks:
     """Build the three-step wizard app."""
     register_prompts()
+    settings = get_settings()
+    mode_caption = "Offline mode: local model and cache only" if settings.offline_mode else CAPTION
 
     with gr.Blocks(title="the-agent-that-got-me-rejected", theme=THEME, css=CSS) as demo:
         thread_id = gr.State(lambda: str(uuid4()))
@@ -466,7 +477,7 @@ def build_app() -> gr.Blocks:
 
         gr.HTML(
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>the-agent-that-got-me-rejected</h1></div>'
-            f'<div><span class="js-tag">{CAPTION}</span></div></div>'
+            f'<div><span class="js-tag">{mode_caption}</span></div></div>'
         )
 
         with gr.Group(visible=True) as page_start:

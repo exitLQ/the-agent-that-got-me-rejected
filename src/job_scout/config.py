@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     scout_tailor_model: str = Field(default="ollama:qwen3:8b", alias="SCOUT_TAILOR_MODEL")
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
     ollama_health_timeout: float = Field(default=3.0, alias="OLLAMA_HEALTH_TIMEOUT")
+    offline_mode: bool = Field(default=True, alias="OFFLINE_MODE")
 
     openai_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENAI_API_KEY")
 
@@ -75,7 +76,7 @@ class Settings(BaseSettings):
     @property
     def has_opik(self) -> bool:
         """Whether Opik tracing is enabled and has an API key."""
-        return self.opik_enabled and bool(self.opik_api_key.get_secret_value())
+        return not self.offline_mode and self.opik_enabled and bool(self.opik_api_key.get_secret_value())
 
 
 @lru_cache(maxsize=1)

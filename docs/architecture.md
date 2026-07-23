@@ -37,9 +37,11 @@ flowchart TB
   end
 
   FJ -->|"query · country · remote"| SRCH
-  subgraph SRCH["run_search cascade · jobs_api.py (fall-through, keyless-safe)"]
+  subgraph SRCH["run_search · jobs_api.py"]
     direction LR
-    JS["JSearch<br/>primary"] --> AZ["Adzuna<br/>international"] --> RM["Remotive<br/>keyless"] --> CA["Cache<br/>~247 offline jobs"]
+    MODE{"OFFLINE_MODE?"} -->|"true"| CA["Cache<br/>local-only"]
+    MODE -->|"false"| JS["JSearch<br/>primary"]
+    JS --> AZ["Adzuna<br/>international"] --> RM["Remotive<br/>keyless"] --> CA
   end
   SRCH -->|"JobPostings"| RJ
 
@@ -83,11 +85,11 @@ flowchart TB
    `fetch_jobs` (the LLM chooses the search arguments) → `rank_jobs` (batched fit
    scoring) → a conditional edge that either loops through `reformulate_query`
    (max 2) to broaden the search, or ends.
-3. **Job sources.** `fetch_jobs` calls the `run_search` cascade — JSearch →
-   Adzuna → Remotive → offline cache — each tried only if the previous returned
-   too few, so it runs with **zero API keys**.
+3. **Job sources.** `fetch_jobs` calls `run_search`. With `OFFLINE_MODE=true`,
+   it returns directly from the committed cache and never initializes a live
+   adapter. With offline mode disabled, it uses the JSearch → Adzuna → Remotive
+   → cache cascade.
 4. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
-   (provider-agnostic + a per-run call budget). **Opik** wraps the whole graph in
-   one line (`track_langgraph`), producing a span tree, the auto-drawn agent
-   graph, per-run cost, the versioned prompt library, and the CV attached to the
-   trace. `config.py` supplies keys and settings.
+   (provider-agnostic + a per-run call budget). **Opik** is available only when
+   offline mode is disabled and tracing is explicitly configured. `config.py`
+   supplies keys, the offline boundary, and other settings.

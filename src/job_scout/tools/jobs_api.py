@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -240,9 +241,22 @@ class CacheSource:
         if not self.path.exists():
             return []
         try:
-            return json.loads(self.path.read_text())
+            return json.loads(self.path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return []
+
+    def metadata(self) -> dict[str, str | int]:
+        """Return local cache provenance for offline-mode status displays."""
+        rows = self._load()
+        try:
+            modified = datetime.fromtimestamp(self.path.stat().st_mtime, tz=UTC).date().isoformat()
+        except OSError:
+            modified = "unknown"
+        return {
+            "path": str(self.path),
+            "job_count": len(rows),
+            "modified_date": modified,
+        }
 
     def fetch(self, query: str, location: str | None, country: str | None, remote: bool, limit: int) -> list[JobPosting]:
         """Rank cached postings by how many query terms they contain."""
@@ -283,6 +297,7 @@ def run_search(
     adzuna: AdzunaSource | None = None,
     remotive: RemotiveSource | None = None,
     cache: CacheSource | None = None,
+    offline_mode: bool | None = None,
 ) -> tuple[list[JobPosting], list[str]]:
     """Search across the sources in order and return ``(jobs, sources_used)``.
 
@@ -290,10 +305,16 @@ def run_search(
     are merged, deduped by ``(title, company)`` and capped at ``limit``. The
     sources are injectable for testing. ``sources_used`` goes into trace metadata.
     """
+    cache = cache or CacheSource()
+    if offline_mode is None:
+        offline_mode = get_settings().offline_mode
+    if offline_mode:
+        cached = _dedupe(cache.fetch(query, location, country, remote, limit))[:limit]
+        return cached, ["cache"] if cached else []
+
     jsearch = jsearch or JSearchSource()
     adzuna = adzuna or AdzunaSource()
     remotive = remotive or RemotiveSource()
-    cache = cache or CacheSource()
 
     jobs: list[JobPosting] = []
     used: list[str] = []

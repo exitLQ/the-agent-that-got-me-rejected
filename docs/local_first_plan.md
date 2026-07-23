@@ -39,18 +39,27 @@ Acceptance criteria:
 
 ## Phase 2: Strict offline job search
 
-- Add an `OFFLINE_MODE` setting.
-- Skip JSearch, Adzuna, and Remotive when offline mode is enabled.
-- Make cache location configurable.
-- Add cache freshness metadata and a visible stale-data notice.
-- Add a deterministic local search strategy for cases where model tool calling
-  is unavailable.
+Status: implemented.
+
+- Added `OFFLINE_MODE=true` as the default.
+- Made offline search return directly from the committed cache without
+  initializing or calling JSearch, Adzuna, or Remotive.
+- Disabled Opik automatically in offline mode, including when credentials are
+  configured.
+- Removed the external Google Fonts import from the interface.
+- Added cache count and file-date metadata to a visible stale-data notice.
+- Added tests that fail if a live adapter or job-search HTTP client is called.
 
 Acceptance criteria:
 
-- A full run succeeds with the network disabled.
-- No job adapter attempts an HTTP request in offline mode.
-- Tests assert that outbound HTTP clients are never called.
+- A full run uses local Ollama and the committed job cache.
+- No live job adapter attempts an HTTP request in offline mode.
+- Dedicated tests assert the local-only boundary.
+
+Implementation note: making the cache path configurable and adding a
+model-independent query generator remain possible refinements. They are not
+required for the strict network boundary because cache search is already
+deterministic after the model supplies the query.
 
 ## Phase 3: Local observability
 
