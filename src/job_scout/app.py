@@ -1,4 +1,4 @@
-"""Gradio UI for Job Scout.
+"""Gradio UI for the-agent-that-got-me-rejected.
 
 A three-step wizard with a refined editorial look: warm-paper background with a
 faint gradient-and-grain wash, a display serif (Fraunces) paired with a mono for
@@ -23,7 +23,7 @@ from job_scout.tracing import opik_url, register_prompts
 CAPTION = "Prepares applications — never submits them."
 
 INTRO_HTML = """
-<p class="js-lead">Drop your resume and let Job Scout find roles that actually match it —
+<p class="js-lead">Drop your resume and let the-agent-that-got-me-rejected find roles that actually match it —
 ranked by fit, with the gaps shown honestly.</p>
 <ol class="js-steps">
   <li><span class="js-num">1</span><div><b>Drop your resume</b> (PDF) below.</div></li>
@@ -457,13 +457,13 @@ def build_app() -> gr.Blocks:
     """Build the three-step wizard app."""
     register_prompts()
 
-    with gr.Blocks(title="Job Scout", theme=THEME, css=CSS) as demo:
+    with gr.Blocks(title="the-agent-that-got-me-rejected", theme=THEME, css=CSS) as demo:
         thread_id = gr.State(lambda: str(uuid4()))
         cv_text_state = gr.State("")
         profile_state = gr.State(None)
 
         gr.HTML(
-            f'<div id="js-header"><div class="js-mark">{_MARK}<h1>Job Scout</h1></div>'
+            f'<div id="js-header"><div class="js-mark">{_MARK}<h1>the-agent-that-got-me-rejected</h1></div>'
             f'<div><span class="js-tag">{CAPTION}</span></div></div>'
         )
 

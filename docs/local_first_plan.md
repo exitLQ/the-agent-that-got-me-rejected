@@ -2,7 +2,7 @@
 
 ## Goal
 
-Run the complete Job Scout workflow on one machine without paid model APIs,
+Run the complete the-agent-that-got-me-rejected workflow on one machine without paid model APIs,
 cloud tracing, or required network access. Live job providers remain optional.
 
 ## Target operating modes

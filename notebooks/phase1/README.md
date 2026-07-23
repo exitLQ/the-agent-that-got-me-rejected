@@ -1,4 +1,4 @@
-# Job Scout notebook notes
+# the-agent-that-got-me-rejected notebook notes
 
 The companion notebook is [`../phase1_walkthrough.ipynb`](../phase1_walkthrough.ipynb).
 

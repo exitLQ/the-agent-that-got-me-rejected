@@ -1,4 +1,4 @@
-"""The Job Scout job-finding graph.
+"""Job-finding graph for the-agent-that-got-me-rejected.
 
 The graph takes an already-extracted ``Profile`` as input (extraction is a
 separate step — see ``job_scout.profile``) and focuses on finding jobs:

@@ -1,6 +1,6 @@
 # Extending job sources
 
-Job Scout fetches postings through a small, pluggable interface. The agent only
+the-agent-that-got-me-rejected fetches postings through a small, pluggable interface. The agent only
 ever sees **one** LangChain tool, `search_jobs`; behind it, a `JobSource`
 adapter (or several, merged) does the actual fetching. This doc shows how to add
 a new source and explains why scraping-based sources are deliberately excluded.

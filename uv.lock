@@ -885,68 +885,6 @@ wheels = [
 ]
 
 [[package]]
-name = "job-scout"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "fpdf2" },
-    { name = "gradio" },
-    { name = "httpx" },
-    { name = "langchain" },
-    { name = "langchain-core" },
-    { name = "langchain-openai" },
-    { name = "langgraph" },
-    { name = "litellm" },
-    { name = "opik" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pypdf" },
-]
-
-[package.optional-dependencies]
-groq = [
-    { name = "langchain-groq" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "jupyter" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-mock" },
-    { name = "respx" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fpdf2", specifier = ">=2.8" },
-    { name = "gradio", specifier = ">=5" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "langchain", specifier = ">=0.3" },
-    { name = "langchain-core", specifier = ">=0.3" },
-    { name = "langchain-groq", marker = "extra == 'groq'", specifier = ">=0.2" },
-    { name = "langchain-openai", specifier = ">=0.3" },
-    { name = "langgraph", specifier = ">=1.1" },
-    { name = "litellm", specifier = "<1.92" },
-    { name = "opik", specifier = ">=2.1" },
-    { name = "pydantic", specifier = ">=2.11" },
-    { name = "pydantic-settings", specifier = ">=2.6" },
-    { name = "pypdf", specifier = ">=5" },
-]
-provides-extras = ["groq"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "jupyter", specifier = ">=1.1" },
-    { name = "pre-commit", specifier = ">=4" },
-    { name = "pytest", specifier = ">=8,<9" },
-    { name = "pytest-mock", specifier = ">=3.14" },
-    { name = "respx", specifier = ">=0.21" },
-    { name = "ruff", specifier = ">=0.8" },
-]
-
-[[package]]
 name = "json5"
 version = "0.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2466,6 +2404,68 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8a/11/965c6fd8e5cc254f1fe142d547387da17a8ebfd75a3455f637c663fb38a0/terminado-0.18.1.tar.gz", hash = "sha256:de09f2c4b85de4765f7714688fff57d3e75bad1f909b589fde880460c753fd2e", size = 32701, upload-time = "2024-03-12T14:34:39.026Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/9e/2064975477fdc887e47ad42157e214526dcad8f317a948dee17e1659a62f/terminado-0.18.1-py3-none-any.whl", hash = "sha256:a4468e1b37bb318f8a86514f65814e1afc977cf29b3992a4500d9dd305dcceb0", size = 14154, upload-time = "2024-03-12T14:34:36.569Z" },
+]
+
+[[package]]
+name = "the-agent-that-got-me-rejected"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fpdf2" },
+    { name = "gradio" },
+    { name = "httpx" },
+    { name = "langchain" },
+    { name = "langchain-core" },
+    { name = "langchain-openai" },
+    { name = "langgraph" },
+    { name = "litellm" },
+    { name = "opik" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pypdf" },
+]
+
+[package.optional-dependencies]
+groq = [
+    { name = "langchain-groq" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "jupyter" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-mock" },
+    { name = "respx" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fpdf2", specifier = ">=2.8" },
+    { name = "gradio", specifier = ">=5" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "langchain", specifier = ">=0.3" },
+    { name = "langchain-core", specifier = ">=0.3" },
+    { name = "langchain-groq", marker = "extra == 'groq'", specifier = ">=0.2" },
+    { name = "langchain-openai", specifier = ">=0.3" },
+    { name = "langgraph", specifier = ">=1.1" },
+    { name = "litellm", specifier = "<1.92" },
+    { name = "opik", specifier = ">=2.1" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "pydantic-settings", specifier = ">=2.6" },
+    { name = "pypdf", specifier = ">=5" },
+]
+provides-extras = ["groq"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jupyter", specifier = ">=1.1" },
+    { name = "pre-commit", specifier = ">=4" },
+    { name = "pytest", specifier = ">=8,<9" },
+    { name = "pytest-mock", specifier = ">=3.14" },
+    { name = "respx", specifier = ">=0.21" },
+    { name = "ruff", specifier = ">=0.8" },
 ]
 
 [[package]]

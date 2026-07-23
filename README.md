@@ -1,6 +1,6 @@
-# Job Scout
+# the-agent-that-got-me-rejected
 
-Job Scout is a local-first AI job-matching agent maintained by
+the-agent-that-got-me-rejected is a local-first AI job-matching agent maintained by
 [exitLQ](https://github.com/exitLQ).
 
 Upload a CV as a PDF, extract a structured candidate profile, search multiple

@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     opik_api_key: SecretStr = Field(default=SecretStr(""), alias="OPIK_API_KEY")
     opik_workspace: str = Field(default="", alias="OPIK_WORKSPACE")
-    opik_project_name: str = Field(default="job-scout", alias="OPIK_PROJECT_NAME")
+    opik_project_name: str = Field(default="the-agent-that-got-me-rejected", alias="OPIK_PROJECT_NAME")
     opik_enabled: bool = Field(default=True, alias="OPIK_ENABLED")
 
     jsearch_api_key: SecretStr = Field(default=SecretStr(""), alias="JSEARCH_API_KEY")

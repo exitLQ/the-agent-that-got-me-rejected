@@ -16,7 +16,7 @@ Writes `reports/baseline.json`. Numbers below are from that file.
 
 Model `openai:gpt-4.1-mini`. 19 runs completed (the 20th was interrupted; the
 runner checkpoints after every run, so the report reflects all completed runs).
-All traces tagged `baseline-batch` in the `job-scout` Opik project.
+All traces tagged `baseline-batch` in the `the-agent-that-got-me-rejected` Opik project.
 
 | metric | value |
 |---|---|

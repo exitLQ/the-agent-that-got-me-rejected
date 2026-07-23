@@ -1,6 +1,6 @@
 # Local setup
 
-This guide explains how to install and run Job Scout on a development machine.
+This guide explains how to install and run the-agent-that-got-me-rejected on a development machine.
 
 ## 1. Install prerequisites
 
@@ -71,7 +71,7 @@ ADZUNA_APP_ID=
 ADZUNA_APP_KEY=
 ```
 
-When these values are empty, Job Scout uses the keyless Remotive adapter and the
+When these values are empty, the-agent-that-got-me-rejected uses the keyless Remotive adapter and the
 offline cache.
 
 ## 5. Verify the installation

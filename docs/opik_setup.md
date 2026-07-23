@@ -1,6 +1,6 @@
 # Opik setup
 
-Job Scout can optionally trace runs in
+the-agent-that-got-me-rejected can optionally trace runs in
 [Opik](https://www.comet.com/docs/opik/). This integration is not required for
 local development.
 
@@ -12,7 +12,7 @@ local development.
    ```
    OPIK_API_KEY=...
    OPIK_WORKSPACE=your-workspace
-   OPIK_PROJECT_NAME=job-scout
+   OPIK_PROJECT_NAME=the-agent-that-got-me-rejected
    OPIK_ENABLED=true
    ```
 

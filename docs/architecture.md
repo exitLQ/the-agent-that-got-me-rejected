@@ -1,6 +1,6 @@
-# Job Scout — Architecture
+# the-agent-that-got-me-rejected architecture
 
-![Job Scout architecture](images/architecture.png)
+![the-agent-that-got-me-rejected architecture](images/architecture.png)
 
 Grounded in the current code (`src/job_scout/…`). Renders anywhere Mermaid is
 supported (GitHub, most blog engines). Legend: **solid arrows** = data flow,
