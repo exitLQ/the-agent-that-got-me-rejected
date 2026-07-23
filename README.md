@@ -194,6 +194,9 @@ make format      # ruff format + fix
 
 ## 🛠️ Troubleshooting
 
+- **`litellm` tries to install Rust on Windows** — sync the current lockfile. The
+  project constrains LiteLLM below 1.92 because that release does not publish a
+  Windows wheel and otherwise falls back to a local Rust build.
 - **No jobs / all `source: cache`** — you have no live-source keys, or the network is blocked. Expected; the cache is the offline fallback. Add Adzuna/JSearch keys and re-run `make snapshot`.
 - **Cost shows $0.00** — you're on a free model (Groq/Ollama). Opik prices only OpenAI/Anthropic/Google models.
 - **No traces in Opik** — check `OPIK_ENABLED=true` and that `OPIK_API_KEY` / `OPIK_WORKSPACE` are set. See [`docs/opik_setup.md`](docs/opik_setup.md).

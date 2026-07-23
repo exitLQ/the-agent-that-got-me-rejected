@@ -13,6 +13,8 @@ dependencies = [
     "langchain-openai>=0.3",
     "langchain-core>=0.3",
     "opik>=2.1",
+    # 1.92.0 does not publish a Windows wheel and falls back to a Rust build.
+    "litellm<1.92",
     "gradio>=5",
     "pypdf>=5",
     "pydantic>=2.11",
@@ -23,7 +25,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=8",
+    "pytest>=8,<9",
     "pytest-mock>=3.14",
     "respx>=0.21",
     "ruff>=0.8",
