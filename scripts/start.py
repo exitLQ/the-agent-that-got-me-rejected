@@ -56,8 +56,8 @@ def _run(command: list[str], *, capture: bool = False) -> subprocess.CompletedPr
 
 
 def sync_dependencies(uv: str) -> None:
-    """Install the locked application and local Ollama integration."""
-    _run([uv, "sync", "--extra", "ollama", "--all-groups"])
+    """Install the locked application and every supported model integration."""
+    _run([uv, "sync", "--all-extras", "--all-groups"])
 
 
 def _ollama_model_name(model_setting: str) -> str | None:
@@ -100,6 +100,37 @@ def ensure_ollama_model(model_setting: str, *, pull_missing: bool) -> None:
         _run([ollama, "pull", model])
     except subprocess.CalledProcessError as exc:
         raise StartError(f"Could not pull Ollama model '{model}'.") from exc
+
+
+def _enabled(name: str, default: bool) -> bool:
+    """Read a strict boolean launcher setting."""
+    value = _read_env_value(name, str(default)).casefold()
+    return value in {"1", "true", "yes", "on"}
+
+
+def ensure_cloud_model(model_setting: str) -> None:
+    """Require explicit network consent and a key for supported cloud models."""
+    provider, separator, model = model_setting.partition(":")
+    provider = provider.casefold()
+    if not separator or not model.strip() or provider == "ollama":
+        return
+    keys = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "xai": "XAI_API_KEY",
+        "groq": "GROQ_API_KEY",
+    }
+    if provider not in keys:
+        raise StartError(f"Unsupported SCOUT_MODEL provider: {provider or model_setting}")
+    if _enabled("OFFLINE_MODE", True):
+        raise StartError("A cloud SCOUT_MODEL requires OFFLINE_MODE=false.")
+    if not _enabled("CLOUD_LLM_ENABLED", False):
+        raise StartError(
+            "A cloud SCOUT_MODEL requires CLOUD_LLM_ENABLED=true to confirm external data transfer."
+        )
+    key_name = keys[provider]
+    if not _read_env_value(key_name):
+        raise StartError(f"{key_name} is required for SCOUT_MODEL={model_setting}.")
 
 
 def launch(uv: str) -> int:
@@ -148,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
             sync_dependencies(uv)
         model_setting = _read_env_value("SCOUT_MODEL", "ollama:qwen3:8b")
         ensure_ollama_model(model_setting, pull_missing=not args.skip_model_pull)
+        ensure_cloud_model(model_setting)
     except (StartError, subprocess.CalledProcessError) as exc:
         print(f"Startup failed: {exc}", file=sys.stderr)
         return 1

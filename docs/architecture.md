@@ -50,8 +50,8 @@ flowchart TB
   E -->|"RankedJobs"| RUN
   RUN -->|"ranked cards + cost/latency + Opik link"| UI
 
-  subgraph LLM_L["LLM · llm.py (get_chat_model + ensure_budget ≤25)"]
-    OA["OpenAI gpt-4o-mini<br/>(or Groq / Ollama via SCOUT_MODEL)"]
+  subgraph LLM_L["LLM · llm.py (provider guard + get_chat_model + ensure_budget ≤25)"]
+    OA["Ollama local default<br/>OpenAI · Anthropic · xAI/Grok optional<br/>cloud requires consent + matching key"]
   end
   EP -. "LLM" .-> OA
   FJ -. "LLM" .-> OA
@@ -108,7 +108,10 @@ flowchart TB
    Exact city matches rank above eligible remote scopes and same-country
    fallbacks; known geographical mismatches are removed before LLM ranking.
 6. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
-   (provider-agnostic + a per-run call budget). **Opik** is available only when
+   (provider guard, provider-agnostic model factory, and per-run call budget).
+   Ollama is local by default. OpenAI, Anthropic, and xAI/Grok require
+   `OFFLINE_MODE=false`, `CLOUD_LLM_ENABLED=true`, and a matching key. **Opik**
+   is available only when
    both offline mode and privacy mode are disabled and tracing is explicitly
    configured. Privacy mode also blocks PDF attachments and excludes the
    candidate name from ranking prompts. `config.py` supplies keys, both

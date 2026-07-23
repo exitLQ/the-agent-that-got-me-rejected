@@ -29,8 +29,12 @@ class Settings(BaseSettings):
     ollama_health_timeout: float = Field(default=3.0, alias="OLLAMA_HEALTH_TIMEOUT")
     offline_mode: bool = Field(default=True, alias="OFFLINE_MODE")
     privacy_mode: bool = Field(default=True, alias="PRIVACY_MODE")
+    cloud_llm_enabled: bool = Field(default=False, alias="CLOUD_LLM_ENABLED")
 
     openai_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENAI_API_KEY")
+    anthropic_api_key: SecretStr = Field(default=SecretStr(""), alias="ANTHROPIC_API_KEY")
+    xai_api_key: SecretStr = Field(default=SecretStr(""), alias="XAI_API_KEY")
+    groq_api_key: SecretStr = Field(default=SecretStr(""), alias="GROQ_API_KEY")
 
     opik_api_key: SecretStr = Field(default=SecretStr(""), alias="OPIK_API_KEY")
     opik_workspace: str = Field(default="", alias="OPIK_WORKSPACE")

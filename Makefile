@@ -9,7 +9,7 @@ help: ## Show this help
 
 .PHONY: setup
 setup: ## Install deps and pre-commit hooks
-	uv sync --all-groups
+	uv sync --all-extras --all-groups
 	uv run pre-commit install
 
 .PHONY: app

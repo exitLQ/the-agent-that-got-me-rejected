@@ -110,10 +110,20 @@ def test_main_check_runs_setup_without_launch(monkeypatch):
     monkeypatch.setattr(start, "ensure_env_file", lambda: False)
     monkeypatch.setattr(start, "sync_dependencies", lambda uv: calls.append(("sync", uv)))
     monkeypatch.setattr(start, "_read_env_value", lambda *args: "openai:gpt-4o-mini")
+    monkeypatch.setattr(start, "ensure_cloud_model", lambda model: calls.append(("cloud", model)))
     monkeypatch.setattr(start, "launch", lambda uv: (_ for _ in ()).throw(AssertionError("launch called")))
 
     assert start.main(["--check"]) == 0
-    assert calls == [("sync", "uv")]
+    assert calls == [("sync", "uv"), ("cloud", "openai:gpt-4o-mini")]
+
+
+def test_dependency_sync_installs_all_provider_extras(monkeypatch):
+    calls = []
+    monkeypatch.setattr(start, "_run", lambda command, capture=False: calls.append(command))
+
+    start.sync_dependencies("uv")
+
+    assert calls == [["uv", "sync", "--all-extras", "--all-groups"]]
 
 
 def test_shell_wrappers_reference_shared_launcher():
@@ -122,3 +132,56 @@ def test_shell_wrappers_reference_shared_launcher():
     assert "scripts/start.py" in (root / "start.ps1").read_text(encoding="utf-8")
     assert "scripts/start.py" in (root / "start.sh").read_text(encoding="utf-8")
     assert "start.sh" in (root / "start.command").read_text(encoding="utf-8")
+
+
+def test_cloud_launcher_requires_offline_disabled(monkeypatch):
+    values = {
+        "OFFLINE_MODE": "true",
+        "CLOUD_LLM_ENABLED": "true",
+        "OPENAI_API_KEY": "configured",
+    }
+    monkeypatch.setattr(start, "_read_env_value", lambda name, default="": values.get(name, default))
+
+    with pytest.raises(start.StartError, match="OFFLINE_MODE=false"):
+        start.ensure_cloud_model("openai:gpt-5-mini")
+
+
+def test_cloud_launcher_requires_explicit_consent(monkeypatch):
+    values = {
+        "OFFLINE_MODE": "false",
+        "CLOUD_LLM_ENABLED": "false",
+        "ANTHROPIC_API_KEY": "configured",
+    }
+    monkeypatch.setattr(start, "_read_env_value", lambda name, default="": values.get(name, default))
+
+    with pytest.raises(start.StartError, match="CLOUD_LLM_ENABLED=true"):
+        start.ensure_cloud_model("anthropic:claude-sonnet-4-6")
+
+
+def test_cloud_launcher_requires_matching_key(monkeypatch):
+    values = {
+        "OFFLINE_MODE": "false",
+        "CLOUD_LLM_ENABLED": "true",
+        "XAI_API_KEY": "",
+    }
+    monkeypatch.setattr(start, "_read_env_value", lambda name, default="": values.get(name, default))
+
+    with pytest.raises(start.StartError, match="XAI_API_KEY"):
+        start.ensure_cloud_model("xai:grok-4.3")
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["openai:gpt-5-mini", "anthropic:claude-sonnet-4-6", "xai:grok-4.3"],
+)
+def test_cloud_launcher_accepts_supported_provider(monkeypatch, model):
+    values = {
+        "OFFLINE_MODE": "false",
+        "CLOUD_LLM_ENABLED": "true",
+        "OPENAI_API_KEY": "configured",
+        "ANTHROPIC_API_KEY": "configured",
+        "XAI_API_KEY": "configured",
+    }
+    monkeypatch.setattr(start, "_read_env_value", lambda name, default="": values.get(name, default))
+
+    start.ensure_cloud_model(model)

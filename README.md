@@ -21,6 +21,7 @@ job applications.
 - Typed CV profile extraction
 - LangGraph agent with a bounded, audited search-reformulation loop
 - Strict offline mode using the committed job cache by default
+- Explicitly gated OpenAI, Anthropic, and xAI/Grok cloud-model options
 - Optional live search through JSearch, Adzuna, and Remotive
 - Bounded concurrent job-fit ranking with a transparent hybrid score
 - Evidence-backed matched skills and technology gaps
@@ -79,6 +80,7 @@ SCOUT_MODEL=ollama:qwen3:8b
 OLLAMA_BASE_URL=http://localhost:11434
 OFFLINE_MODE=true
 PRIVACY_MODE=true
+CLOUD_LLM_ENABLED=false
 OPIK_ENABLED=false
 ```
 
@@ -97,6 +99,7 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HEALTH_TIMEOUT=3
 OFFLINE_MODE=true
 PRIVACY_MODE=true
+CLOUD_LLM_ENABLED=false
 ```
 
 Then install the extra and pull the model:
@@ -160,19 +163,150 @@ OLLAMA_BASE_URL=http://192.168.1.50:11434
 
 Do not expose an unauthenticated Ollama server directly to the public internet.
 
-### Switching back to OpenAI
+## Optional online model providers
 
-Install the normal dependencies and configure:
+### Supported providers
+
+Ollama remains the default. OpenAI, Anthropic, and Grok from xAI are optional
+online providers behind an explicit consent gate.
+
+| Provider | `SCOUT_MODEL` example | Required key | Integration |
+|---|---|---|---|
+| OpenAI | `openai:gpt-5-mini` | `OPENAI_API_KEY` | `langchain-openai` |
+| Anthropic | `anthropic:claude-sonnet-4-6` | `ANTHROPIC_API_KEY` | `langchain-anthropic` |
+| Grok from xAI | `xai:grok-4.3` | `XAI_API_KEY` | `langchain-xai` |
+
+Grok and Groq are different services. Grok is provided by xAI and uses
+`XAI_API_KEY`. The existing optional Groq provider uses `GROQ_API_KEY`.
+
+Model identifiers change over time and account access can differ. The value
+after the provider prefix is passed to the provider integration. Consult the
+provider's current model list before changing a production configuration:
+[OpenAI models](https://platform.openai.com/docs/models),
+[Anthropic models](https://platform.claude.com/docs/en/about-claude/models/overview),
+and [xAI models](https://docs.x.ai/developers/models).
+
+### Install cloud integrations
+
+Install every supported optional provider:
+
+```bash
+uv sync --all-extras --all-groups
+```
+
+The one-command launchers run this synchronization automatically. Installing an
+integration does not enable its network access.
+
+### Explicit network consent
+
+Every cloud model requires all three conditions:
 
 ```dotenv
-SCOUT_MODEL=openai:gpt-4o-mini
-SCOUT_TAILOR_MODEL=openai:gpt-4o-mini
+OFFLINE_MODE=false
+CLOUD_LLM_ENABLED=true
+<PROVIDER_API_KEY>=your-key
+```
+
+`CLOUD_LLM_ENABLED` prevents an accidental edit to `SCOUT_MODEL` from sending
+data outside the machine. `OFFLINE_MODE` remains the strict global network
+boundary. Startup fails before Gradio opens when either safeguard conflicts
+with the selected model.
+
+Setting `OFFLINE_MODE=false` also permits the live job-source cascade. Without
+job-source credentials, the keyless Remotive adapter can be called before the
+cache fallback.
+
+OpenAI example:
+
+```dotenv
+SCOUT_MODEL=openai:gpt-5-mini
+SCOUT_TAILOR_MODEL=openai:gpt-5-mini
+OFFLINE_MODE=false
+CLOUD_LLM_ENABLED=true
 OPENAI_API_KEY=your-key
 ```
 
-No source-code change is required.
+Anthropic example:
 
-### Verification
+```dotenv
+SCOUT_MODEL=anthropic:claude-sonnet-4-6
+SCOUT_TAILOR_MODEL=anthropic:claude-sonnet-4-6
+OFFLINE_MODE=false
+CLOUD_LLM_ENABLED=true
+ANTHROPIC_API_KEY=your-key
+```
+
+Grok from xAI example:
+
+```dotenv
+SCOUT_MODEL=xai:grok-4.3
+SCOUT_TAILOR_MODEL=xai:grok-4.3
+OFFLINE_MODE=false
+CLOUD_LLM_ENABLED=true
+XAI_API_KEY=your-key
+```
+
+Only configure the key for the selected provider. Never place keys in source
+files, screenshots, issue descriptions, shell history, or committed
+configuration.
+
+### What is sent to a cloud provider
+
+Profile extraction sends the raw text extracted from the uploaded CV. Search
+and ranking calls can send the structured profile, preferred roles, skills,
+locations, job titles, companies, and job-description excerpts.
+
+`PRIVACY_MODE=true` still removes the temporary UI upload, keeps raw text out of
+application state, omits the candidate name from ranking prompts, and disables
+Opik. It does not prevent the selected cloud model from receiving inputs needed
+to perform inference. The interface therefore displays a persistent cloud-model
+warning and identifies the active provider in the footer.
+
+Use Ollama when CV data must not leave the machine.
+
+### Cost and rate limits
+
+Cloud providers charge and throttle according to their own account, model, and
+region policies. The application keeps its existing
+`MAX_LLM_CALLS_PER_RUN` circuit breaker and bounded ranking concurrency, but
+that limit is not a spending guarantee. Review provider billing dashboards and
+start with `RANK_MAX_WORKERS=1` when evaluating a new account.
+
+The application never validates a key by making a separate billable completion.
+It checks that the matching key exists; authentication, model access, quota, and
+rate-limit errors are returned by the provider on the first actual request.
+
+The footer shows an application-side USD estimate only for models with a
+maintained local price entry. For other models it says `cost: check provider
+dashboard` instead of displaying a misleading zero.
+
+### Switching back to local mode
+
+Restore:
+
+```dotenv
+SCOUT_MODEL=ollama:qwen3:8b
+SCOUT_TAILOR_MODEL=ollama:qwen3:8b
+OFFLINE_MODE=true
+CLOUD_LLM_ENABLED=false
+```
+
+Cloud keys may be removed from `.env`. Restart the application after every
+provider change.
+
+### Provider verification
+
+Run the provider tests:
+
+```bash
+uv run pytest tests/test_llm.py tests/test_start_script.py
+```
+
+The tests mock every client boundary. They verify provider parsing, explicit
+consent, offline rejection, matching keys, unsupported-provider errors, Ollama
+health checks, and launcher validation without contacting a model API.
+
+## Ollama runtime verification
 
 List locally installed models:
 
@@ -982,7 +1116,8 @@ The default command performs these steps in order:
 1. verifies that `uv` is available;
 2. asks `uv` for an isolated Python 3.12 runtime for the launcher;
 3. creates `.env` from `.env.example` only when `.env` does not exist;
-4. installs locked dependencies with the Ollama extra and development group;
+4. installs locked dependencies with all supported provider extras and the
+   development group;
 5. reads `SCOUT_MODEL` from the process environment or `.env`;
 6. when the model uses Ollama, verifies the Ollama executable and service;
 7. downloads the configured Ollama model only when it is missing; and
@@ -1091,7 +1226,7 @@ The single `Python 3.12 quality gate` job performs these steps:
 
 1. checks out the exact commit;
 2. installs `uv` and selects Python 3.12;
-3. installs the project, Ollama extra, and development dependencies from
+3. installs the project, all provider extras, and development dependencies from
    `uv.lock`;
 4. runs Ruff without modifying files;
 5. runs the repository and documentation validator;
@@ -1297,7 +1432,11 @@ Important environment variables:
 | `RANK_MAX_WORKERS` | Maximum concurrent ranking requests, from 1 to 8 | No |
 | `OFFLINE_MODE` | Restricts job search and tracing to local resources | No |
 | `PRIVACY_MODE` | Minimizes CV retention and disables cloud tracing | No |
+| `CLOUD_LLM_ENABLED` | Explicitly permits a configured cloud model | For cloud models |
 | `OPENAI_API_KEY` | Authentication for an optional OpenAI model | For OpenAI |
+| `ANTHROPIC_API_KEY` | Authentication for an optional Anthropic model | For Anthropic |
+| `XAI_API_KEY` | Authentication for an optional Grok model from xAI | For xAI |
+| `GROQ_API_KEY` | Authentication for optional Groq, not Grok | For Groq |
 | `OPIK_ENABLED` | Enables or disables external tracing | No |
 | `JSEARCH_API_KEY` | Enables live JSearch results | No |
 | `ADZUNA_APP_ID` | Enables Adzuna with `ADZUNA_APP_KEY` | No |

@@ -16,10 +16,11 @@ os.environ["OPIK_API_KEY"] = ""
 os.environ["ADZUNA_APP_ID"] = ""
 os.environ["ADZUNA_APP_KEY"] = ""
 os.environ["JSEARCH_API_KEY"] = ""
-os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
+os.environ["OPENAI_API_KEY"] = "test-openai-key"
 os.environ["SCOUT_MODEL"] = "openai:gpt-4o-mini"
 os.environ["SCOUT_TAILOR_MODEL"] = "openai:gpt-4o-mini"
 os.environ["OFFLINE_MODE"] = "false"
+os.environ["CLOUD_LLM_ENABLED"] = "true"
 
 from job_scout.config import get_settings  # noqa: E402
 from job_scout.graph.schemas import JobPosting, Profile  # noqa: E402

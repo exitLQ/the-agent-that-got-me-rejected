@@ -50,6 +50,7 @@ class RunResult:
     ranking_failed_batches: int = 0
     errors: list[str] = field(default_factory=list)
     cost_usd: float = 0.0
+    cost_estimate_available: bool = False
     latency_s: float = 0.0
     opik_url: str = ""
     failed: bool = False
@@ -120,6 +121,7 @@ def stream_search(
         result.error_message = f"{type(exc).__name__}: {exc}"
     finally:
         result.latency_s = round(time.monotonic() - start, 2)
+        result.cost_estimate_available = settings.scout_model.split(":", 1)[-1] in _PRICES_PER_MTOK
         result.cost_usd = _estimate_cost(usage_cb.usage_metadata, settings.scout_model)
         if cv_path and not settings.privacy_mode:
             attach_cv(tracer, cv_path)

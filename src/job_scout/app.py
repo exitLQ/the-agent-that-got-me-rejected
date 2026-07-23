@@ -16,7 +16,7 @@ import gradio as gr
 
 from job_scout.config import get_settings
 from job_scout.graph.schemas import Profile, RankedJob, SkillEvidence
-from job_scout.llm import OllamaRuntimeError, validate_ollama_runtime
+from job_scout.llm import ModelConfigurationError, OllamaRuntimeError, model_provider, validate_model_configuration
 from job_scout.privacy import delete_temporary_upload
 from job_scout.profile import extract_profile
 from job_scout.runner import RunResult, stream_search
@@ -434,6 +434,12 @@ def _footer_html(result: RunResult) -> str:
     """Render the run footer: cost, latency, job source, and the Opik link."""
     settings = get_settings()
     privacy_note = "privacy: raw resume discarded" if settings.privacy_mode else "privacy mode: off"
+    provider = model_provider(settings.scout_model)
+    model_note = (
+        f"cloud LLM: CV content sent to {escape(provider)}"
+        if provider and provider != "ollama"
+        else "local LLM: Ollama"
+    )
     if settings.offline_mode:
         cache_meta = CacheSource().metadata()
         offline_note = (
@@ -445,7 +451,10 @@ def _footer_html(result: RunResult) -> str:
         link = f'<a href="{result.opik_url or opik_url()}" target="_blank" rel="noopener">view traces in Opik ↗</a>'
     if result.failed:
         details = "" if settings.offline_mode else " The trace has details."
-        body = f"run failed — {escape(result.error_message)}.{details} · {link} · {privacy_note}"
+        body = (
+            f"run failed — {escape(result.error_message)}.{details} · "
+            f"{link} · {privacy_note} · {model_note}"
+        )
     else:
         sources = escape(", ".join(result.jobs_sources) or "none")
         sep = ' <span class="js-muted">·</span> '
@@ -461,10 +470,16 @@ def _footer_html(result: RunResult) -> str:
             f"{result.ranking_failed_batches} failed"
             f"</span>"
         )
+        cost_meta = (
+            f"${result.cost_usd:.4f}"
+            if result.cost_estimate_available
+            else "cost: check provider dashboard"
+        )
         body = (
-            f'<span class="js-meta-mono">${result.cost_usd:.4f}</span>{sep}'
+            f'<span class="js-meta-mono">{cost_meta}</span>{sep}'
             f'<span class="js-meta-mono">{result.latency_s}s</span>{sep}'
-            f"source: {sources}{sep}{query_meta}{sep}{ranking_meta}{sep}{link}{sep}{privacy_note}"
+            f"source: {sources}{sep}{query_meta}{sep}{ranking_meta}{sep}{link}"
+            f"{sep}{privacy_note}{sep}{model_note}"
         )
     return f'<div class="js-footer">{body}</div>'
 
@@ -473,6 +488,18 @@ def _status(text: str, error: bool = False) -> str:
     """Render a status line on the start page."""
     cls = "js-status js-status-err" if error else "js-status"
     return f'<div class="{cls}">{escape(text)}</div>'
+
+
+def _cloud_warning_html(model: str) -> str:
+    """Render an explicit external-data-transfer warning for cloud models."""
+    provider = model_provider(model)
+    if not provider or provider == "ollama":
+        return ""
+    return (
+        '<div class="js-card js-status-err"><b>Cloud model active.</b> '
+        f"Resume text and job content are sent to {escape(provider)}. "
+        "Do not upload data you are not authorized to share.</div>"
+    )
 
 
 def on_upload(file_path: str | None, thread_id: str):
@@ -551,6 +578,10 @@ def build_app() -> gr.Blocks:
     mode_caption = "Offline mode: local model and cache only" if settings.offline_mode else CAPTION
     if settings.privacy_mode:
         mode_caption = f"{mode_caption} | Privacy mode: resume data minimized"
+    provider = model_provider(settings.scout_model)
+    if provider and provider != "ollama":
+        mode_caption = f"Online model: {provider} | External data transfer enabled"
+    cloud_warning = _cloud_warning_html(settings.scout_model)
 
     with gr.Blocks(title="the-agent-that-got-me-rejected", theme=THEME, css=CSS) as demo:
         thread_id = gr.State(lambda: str(uuid4()))
@@ -560,6 +591,8 @@ def build_app() -> gr.Blocks:
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>the-agent-that-got-me-rejected</h1></div>'
             f'<div><span class="js-tag">{mode_caption}</span></div></div>'
         )
+        if cloud_warning:
+            gr.HTML(cloud_warning)
 
         with gr.Group(visible=True) as page_start:
             gr.HTML(_stepper(1))
@@ -601,8 +634,8 @@ def build_app() -> gr.Blocks:
 def main() -> None:
     """Launch the Gradio app."""
     try:
-        validate_ollama_runtime(get_settings().scout_model)
-    except OllamaRuntimeError as exc:
+        validate_model_configuration(get_settings().scout_model)
+    except (ModelConfigurationError, OllamaRuntimeError) as exc:
         raise SystemExit(f"Startup check failed: {exc}") from exc
     build_app().launch()
 

@@ -17,6 +17,11 @@ env:
   UV_FROZEN: "1"
   OFFLINE_MODE: "true"
   PRIVACY_MODE: "true"
+  CLOUD_LLM_ENABLED: "false"
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  XAI_API_KEY: ""
+  GROQ_API_KEY: ""
   OPIK_ENABLED: "false"
   OPIK_API_KEY: ""
   JSEARCH_API_KEY: ""
@@ -44,7 +49,7 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Install locked dependencies
-        run: uv sync --frozen --extra ollama --all-groups
+        run: uv sync --frozen --all-extras --all-groups
 
       - name: Lint
         run: uv run --frozen ruff check .

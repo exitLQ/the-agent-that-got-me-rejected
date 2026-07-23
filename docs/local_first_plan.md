@@ -247,6 +247,34 @@ Acceptance criteria:
 - CI verifies offline behavior and documentation invariants without external
   service credentials.
 
+## Incremental improvement 11: Optional cloud model providers
+
+Status: implemented.
+
+- Kept Ollama and strict offline behavior as the defaults.
+- Added OpenAI, Anthropic, and Grok from xAI through the shared LangChain model
+  interface.
+- Added `CLOUD_LLM_ENABLED=false` as an explicit external-data-transfer gate.
+- Required `OFFLINE_MODE=false` and a provider-specific key before creating a
+  cloud client.
+- Added actionable checks for unsupported providers, missing keys, conflicting
+  offline settings, and missing integration packages.
+- Added a visible pre-upload warning and footer disclosure for cloud execution.
+- Added locked `langchain-anthropic` and `langchain-xai` integrations.
+- Updated launchers and CI to install all supported provider extras.
+- Replaced misleading zero-cost display for unpriced models with a provider
+  dashboard notice.
+- Added mocked provider, launcher, configuration, and UI disclosure tests.
+
+Acceptance criteria:
+
+- Changing only `SCOUT_MODEL` cannot silently enable external model traffic.
+- Strict offline mode rejects every cloud provider before a CV is processed.
+- OpenAI, Anthropic, and xAI each require their own matching key.
+- Grok/xAI is clearly distinguished from Groq.
+- The interface warns that CV and job content leave the machine.
+- CI exercises provider configuration without keys, credits, or live API calls.
+
 ## Recommended implementation order
 
 1. Add `langchain-ollama` and provider checks.

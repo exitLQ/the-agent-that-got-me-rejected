@@ -7,7 +7,14 @@ import pytest
 from langchain_ollama import ChatOllama
 
 from job_scout.config import get_settings
-from job_scout.llm import OllamaRuntimeError, get_chat_model, validate_ollama_runtime
+from job_scout.llm import (
+    ModelConfigurationError,
+    OllamaRuntimeError,
+    get_chat_model,
+    model_provider,
+    validate_model_configuration,
+    validate_ollama_runtime,
+)
 
 
 def test_cloud_model_skips_ollama_health_check(monkeypatch):
@@ -64,3 +71,94 @@ def test_get_chat_model_builds_chat_ollama(monkeypatch):
     assert isinstance(model, ChatOllama)
     assert model.model == "qwen3:8b"
     get_chat_model.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("model", "provider"),
+    [
+        ("ollama:qwen3:8b", "ollama"),
+        ("openai:gpt-5-mini", "openai"),
+        ("anthropic:claude-sonnet-4-6", "anthropic"),
+        ("xai:grok-4.3", "xai"),
+    ],
+)
+def test_model_provider(model, provider):
+    assert model_provider(model) == provider
+
+
+@pytest.mark.parametrize(
+    ("model", "key_name"),
+    [
+        ("openai:gpt-5-mini", "OPENAI_API_KEY"),
+        ("anthropic:claude-sonnet-4-6", "ANTHROPIC_API_KEY"),
+        ("xai:grok-4.3", "XAI_API_KEY"),
+    ],
+)
+def test_cloud_provider_is_created_with_explicit_consent(monkeypatch, model, key_name):
+    sentinel = object()
+    monkeypatch.setenv("OFFLINE_MODE", "false")
+    monkeypatch.setenv("CLOUD_LLM_ENABLED", "true")
+    monkeypatch.setenv(key_name, "test-secret")
+    get_settings.cache_clear()
+    get_chat_model.cache_clear()
+    calls = []
+    monkeypatch.setattr(
+        "job_scout.llm.init_chat_model",
+        lambda selected, temperature: calls.append((selected, temperature)) or sentinel,
+    )
+
+    assert get_chat_model(model, 0.25) is sentinel
+    assert calls == [(model, 0.25)]
+    get_chat_model.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "openai:gpt-5-mini",
+        "anthropic:claude-sonnet-4-6",
+        "xai:grok-4.3",
+    ],
+)
+def test_offline_mode_blocks_cloud_models(monkeypatch, model):
+    monkeypatch.setenv("OFFLINE_MODE", "true")
+    monkeypatch.setenv("CLOUD_LLM_ENABLED", "true")
+    get_settings.cache_clear()
+
+    with pytest.raises(ModelConfigurationError, match="OFFLINE_MODE=true"):
+        validate_model_configuration(model)
+
+
+def test_cloud_model_requires_explicit_consent(monkeypatch):
+    monkeypatch.setenv("OFFLINE_MODE", "false")
+    monkeypatch.setenv("CLOUD_LLM_ENABLED", "false")
+    get_settings.cache_clear()
+
+    with pytest.raises(ModelConfigurationError, match="CLOUD_LLM_ENABLED=true"):
+        validate_model_configuration("anthropic:claude-sonnet-4-6")
+
+
+def test_cloud_model_requires_matching_key(monkeypatch):
+    monkeypatch.setenv("OFFLINE_MODE", "false")
+    monkeypatch.setenv("CLOUD_LLM_ENABLED", "true")
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    get_settings.cache_clear()
+
+    with pytest.raises(ModelConfigurationError, match="XAI_API_KEY"):
+        validate_model_configuration("xai:grok-4.3")
+
+
+def test_unsupported_provider_is_rejected():
+    with pytest.raises(ModelConfigurationError, match="Unsupported SCOUT_MODEL"):
+        validate_model_configuration("unknown:model")
+
+
+def test_missing_provider_package_is_actionable(monkeypatch):
+    monkeypatch.setenv("OFFLINE_MODE", "false")
+    monkeypatch.setenv("CLOUD_LLM_ENABLED", "true")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "configured")
+    monkeypatch.setattr("job_scout.llm.find_spec", lambda package: None)
+    get_settings.cache_clear()
+
+    with pytest.raises(ModelConfigurationError, match="uv sync --all-extras"):
+        validate_model_configuration("anthropic:claude-sonnet-4-6")

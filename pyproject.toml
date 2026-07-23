@@ -37,6 +37,10 @@ dev = [
 # Optional model providers; see README.md and .env.example.
 groq = ["langchain-groq>=0.2"]
 ollama = ["langchain-ollama>=1.0"]
+cloud = [
+    "langchain-anthropic>=1.4",
+    "langchain-xai>=1.2",
+]
 
 [build-system]
 requires = ["hatchling"]

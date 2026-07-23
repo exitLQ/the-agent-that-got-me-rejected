@@ -85,6 +85,12 @@ $env:UV_PYTHON_INSTALL_DIR="$PWD\.uv-python"
 uv sync --extra ollama --all-groups
 ```
 
+To install Ollama and every supported cloud-provider integration:
+
+```bash
+uv sync --all-extras --all-groups
+```
+
 ## 5. Configure the application
 
 Create `.env` from the example:
@@ -113,6 +119,7 @@ OLLAMA_BASE_URL=http://localhost:11434
 RANK_MAX_WORKERS=2
 OFFLINE_MODE=true
 PRIVACY_MODE=true
+CLOUD_LLM_ENABLED=false
 OPIK_ENABLED=false
 ```
 
@@ -137,6 +144,49 @@ Privacy mode cannot prevent an explicitly configured cloud model from receiving
 the resume text required for profile extraction. The batch command preserves
 the user-owned PDF path; automatic deletion applies only to UI files inside the
 operating system temporary directory.
+
+### Optional cloud model
+
+Cloud models require an explicit three-part configuration: disable strict
+offline mode, enable cloud-LLM consent, and provide the key matching the model
+prefix.
+
+OpenAI:
+
+```dotenv
+SCOUT_MODEL=openai:gpt-5-mini
+OFFLINE_MODE=false
+CLOUD_LLM_ENABLED=true
+OPENAI_API_KEY=your-key
+```
+
+Anthropic:
+
+```dotenv
+SCOUT_MODEL=anthropic:claude-sonnet-4-6
+OFFLINE_MODE=false
+CLOUD_LLM_ENABLED=true
+ANTHROPIC_API_KEY=your-key
+```
+
+Grok from xAI:
+
+```dotenv
+SCOUT_MODEL=xai:grok-4.3
+OFFLINE_MODE=false
+CLOUD_LLM_ENABLED=true
+XAI_API_KEY=your-key
+```
+
+Grok is not Groq. Groq uses the separate `groq:` prefix and `GROQ_API_KEY`.
+When a cloud provider is active, raw CV text is sent to that provider during
+profile extraction. Privacy mode still minimizes local retention and disables
+Opik, but it cannot make remote inference local. The interface displays this
+boundary before a CV is uploaded.
+
+Because `OFFLINE_MODE=false` is the global network opt-in, it also enables the
+live job-source cascade. With no job-source keys, the application can call the
+keyless Remotive adapter before falling back to the cache.
 
 Optional live job sources require explicit online mode:
 
@@ -350,7 +400,23 @@ application.
 ### Model authentication error
 
 Confirm that the provider named by `SCOUT_MODEL` has a matching API key in
-`.env`. Restart the application after editing the file.
+`.env`. Also confirm `OFFLINE_MODE=false` and `CLOUD_LLM_ENABLED=true`. Restart
+the application after editing the file.
+
+### Cloud model is blocked at startup
+
+This is intentional unless external data transfer has been explicitly enabled.
+Check the provider prefix and use exactly one matching key:
+
+| Prefix | Key |
+|---|---|
+| `openai:` | `OPENAI_API_KEY` |
+| `anthropic:` | `ANTHROPIC_API_KEY` |
+| `xai:` | `XAI_API_KEY` |
+| `groq:` | `GROQ_API_KEY` |
+
+If the CV must remain local, keep `OFFLINE_MODE=true`,
+`CLOUD_LLM_ENABLED=false`, and select an `ollama:` model instead.
 
 ### Ollama is not reachable
 

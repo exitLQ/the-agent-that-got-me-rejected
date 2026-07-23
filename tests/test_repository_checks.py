@@ -16,6 +16,7 @@ def test_ci_uses_frozen_lockfile_and_offline_defaults():
     assert "uv run --frozen pytest" in workflow
     assert 'OFFLINE_MODE: "true"' in workflow
     assert 'PRIVACY_MODE: "true"' in workflow
+    assert 'CLOUD_LLM_ENABLED: "false"' in workflow
     assert 'OPIK_ENABLED: "false"' in workflow
     assert "permissions:\n  contents: read" in workflow
 
