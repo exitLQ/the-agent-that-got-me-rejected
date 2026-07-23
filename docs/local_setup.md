@@ -130,6 +130,18 @@ Location matching ignores case, accents, and punctuation. It also recognizes
 common translations such as `Munich` and `München`. Unknown locations are not
 assigned to a guessed country.
 
+### Reading the fit score
+
+The large score on each job card is a hybrid:
+
+```text
+60% deterministic rules + 40% model assessment
+```
+
+The rule score combines skills, role, seniority, and location. The card lists
+all component values below the explanation. This makes differences between two
+results inspectable and helps identify incomplete CV or job data.
+
 ## 7. Development workflow
 
 Before committing:

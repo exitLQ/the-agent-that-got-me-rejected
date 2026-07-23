@@ -20,7 +20,7 @@ job applications.
 - LangGraph agent with a bounded search-reformulation loop
 - Strict offline mode using the committed job cache by default
 - Optional live search through JSearch, Adzuna, and Remotive
-- Batched job-fit ranking
+- Batched job-fit ranking with a transparent hybrid score
 - Gradio web interface
 - Optional Opik tracing
 - Offline fallback data for development and testing
@@ -355,6 +355,122 @@ The tests cover accent normalization, word-boundary safety, translated cities,
 exact and country-level ordering, multiple profile locations, remote regions,
 unknown locations, provider behavior, deduplication, and result limits.
 
+## Deterministic hybrid score
+
+### Why the score changed
+
+The model previously supplied the displayed fit score directly. Even with a
+temperature of zero, that value could vary between models or overvalue a fluent
+but weak assessment. The displayed score now uses a fixed public formula:
+
+```text
+final fit = round(0.60 × deterministic score + 0.40 × model score)
+```
+
+The model still contributes qualitative judgment and the written explanation,
+but it cannot unilaterally determine ranking.
+
+### Deterministic component
+
+The deterministic score is itself a weighted calculation:
+
+```text
+deterministic score =
+    0.40 × skills
+  + 0.30 × role
+  + 0.15 × seniority
+  + 0.15 × location
+```
+
+| Component | Weight | Calculation |
+|---|---:|---|
+| Skills | 40% | Exact normalized profile-skill phrases found in the job title, description, or tags |
+| Role | 30% | Coverage of the best primary-role tokens by the job title |
+| Seniority | 15% | Distance between profile seniority and explicit title seniority |
+| Location | 15% | Exact city, eligible remote scope, same-country fallback, or mismatch |
+
+Common technical punctuation is normalized before skill comparison. `C++`,
+`C#`, `.NET`, `Node.js`, and `scikit-learn` therefore remain meaningful terms
+instead of collapsing into ambiguous fragments.
+
+When the profile has no skills or roles, that missing component receives a
+neutral score of 50. A title without an explicit seniority receives 60. These
+neutral values avoid treating absent metadata as either a perfect match or a
+definite mismatch.
+
+### Example
+
+Suppose a job receives:
+
+```text
+skills       50
+role        100
+seniority    60
+location    100
+```
+
+Its deterministic score is:
+
+```text
+round(50 × 0.40 + 100 × 0.30 + 60 × 0.15 + 100 × 0.15) = 74
+```
+
+If the model score is 80, the displayed fit is:
+
+```text
+round(74 × 0.60 + 80 × 0.40) = 76
+```
+
+Python uses round-to-even behavior for exact half values. All formula inputs
+are integers from 0 to 100.
+
+### Reliability behavior
+
+Every fetched job remains in the result set even if the model accidentally
+omits it from a batch response. For an omitted job, the deterministic score is
+used as both formula inputs, so the final score equals the deterministic score.
+The explanation explicitly states that no model assessment was returned.
+
+Unknown job identifiers returned by the model are ignored. Final ordering uses
+the following deterministic tie-break sequence:
+
+1. final hybrid score, descending;
+2. deterministic score, descending;
+3. model score, descending; and
+4. job identifier, ascending.
+
+This prevents provider response order from deciding otherwise equal results.
+
+### Score visibility
+
+Each result card shows the final score in its gauge and exposes these values
+below the explanation:
+
+```text
+rules 74  model 80  skills 50  role 100  seniority 60  location 100
+```
+
+The split makes it possible to see whether a high result is supported by
+verifiable profile and posting data or mainly by the model assessment.
+
+### Verification
+
+Run the dedicated scoring and ranking tests:
+
+```bash
+uv run pytest tests/test_scoring.py tests/test_nodes.py tests/test_schemas.py
+```
+
+They verify the component weights, technical-term normalization, perfect
+matches, inflated-model-score resistance, the 60/40 formula, score bounds,
+batch behavior, and missing model assessments.
+
+### Current boundary
+
+Point 4 uses exact normalized profile-skill phrases for the rule score. The
+model-provided `matched_skills` and `gaps` shown as text are not yet validated
+against evidence. That grounding work is intentionally handled in Point 5.
+
 ## Run the application
 
 ```bash
@@ -416,6 +532,7 @@ src/job_scout/
   config.py           Environment configuration
   llm.py              Model initialization and call budget
   profile.py          CV-to-profile extraction
+  scoring.py          Deterministic and hybrid fit-score calculation
   runner.py           Shared application and batch runner
   tracing.py          Optional Opik integration
   graph/              LangGraph state, nodes, schemas, and prompts

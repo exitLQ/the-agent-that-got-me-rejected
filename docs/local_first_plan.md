@@ -86,6 +86,29 @@ Acceptance criteria:
 - Unknown place names do not silently trigger a United States request.
 - Location behavior is identical in offline and online result processing.
 
+## Incremental improvement 4: Deterministic hybrid score
+
+Status: implemented.
+
+- Replaced direct display of the model score with a fixed 60% rules and 40%
+  model formula.
+- Added weighted skill, role, seniority, and location components.
+- Added punctuation-safe normalization for common technical skills.
+- Preserved jobs omitted from a model batch by falling back to their
+  deterministic score.
+- Added an explicit four-step tie-break order.
+- Exposed every component in the result cards.
+- Added unit tests for formula values, boundaries, normalization, inflated
+  model assessments, and incomplete model responses.
+
+Acceptance criteria:
+
+- The same component inputs always produce the same final score.
+- A high model score cannot by itself turn a clearly unrelated job into a
+  strong match.
+- Every displayed score can be reconstructed from documented values.
+- A malformed partial model response does not silently remove a fetched job.
+
 ## Phase 3: Local observability
 
 - Add a no-op tracer as the default.

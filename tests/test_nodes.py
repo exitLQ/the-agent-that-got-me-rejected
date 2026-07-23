@@ -77,6 +77,49 @@ def test_rank_jobs_empty_jobs(sample_profile):
     assert out["ranked_jobs"] == []
 
 
+def test_rank_jobs_keeps_job_missing_from_llm_response(monkeypatch, sample_profile):
+    jobs = [
+        make_job("included", "Data Scientist", "Acme"),
+        make_job("omitted", "ML Engineer", "Globex"),
+    ]
+    result = JobScores(
+        scores=[
+            JobScore(
+                job_id="included",
+                fit_score=80,
+                fit_explanation="Model assessment.",
+            )
+        ]
+    )
+    monkeypatch.setattr(rank_mod, "get_chat_model", lambda *a, **k: structured_llm(result))
+
+    out = rank_jobs({"profile": sample_profile, "jobs": jobs, "llm_calls": 0})
+    by_id = {ranked.job.job_id: ranked for ranked in out["ranked_jobs"]}
+
+    assert set(by_id) == {"included", "omitted"}
+    assert by_id["included"].score_breakdown.llm == 80
+    assert by_id["omitted"].fit_score == by_id["omitted"].score_breakdown.deterministic
+    assert "deterministic signals only" in by_id["omitted"].fit_explanation
+
+
+def test_rank_jobs_uses_job_id_as_final_tie_break(monkeypatch, sample_profile):
+    jobs = [
+        make_job("z-job", "Data Scientist", "Zeta"),
+        make_job("a-job", "Data Scientist", "Alpha"),
+    ]
+    result = JobScores(
+        scores=[
+            JobScore(job_id=job.job_id, fit_score=80, fit_explanation="Equal.")
+            for job in jobs
+        ]
+    )
+    monkeypatch.setattr(rank_mod, "get_chat_model", lambda *a, **k: structured_llm(result))
+
+    out = rank_jobs({"profile": sample_profile, "jobs": jobs, "llm_calls": 0})
+
+    assert [ranked.job.job_id for ranked in out["ranked_jobs"]] == ["a-job", "z-job"]
+
+
 def test_reformulate_increments_counter(monkeypatch, sample_profile):
     monkeypatch.setattr(reformulate_mod, "get_chat_model", lambda *a, **k: plain_llm("data analyst"))
     state = {"profile": sample_profile, "search_query": "data scientist", "reformulation_count": 0, "llm_calls": 3}

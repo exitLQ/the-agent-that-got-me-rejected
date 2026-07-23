@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from job_scout.graph.schemas import JobPosting, RankedJob
+from job_scout.graph.schemas import JobPosting, RankedJob, ScoreBreakdown
 from tests.conftest import make_job
 
 
@@ -23,3 +23,9 @@ def test_job_posting_source_literal():
     JobPosting(job_id="1", title="t", company="c", location="l", source="adzuna")
     with pytest.raises(ValidationError):
         JobPosting(job_id="1", title="t", company="c", location="l", source="linkedin")
+
+
+def test_score_breakdown_bounds():
+    ScoreBreakdown(llm=0, deterministic=100, skills=50, role=50, seniority=50, location=50)
+    with pytest.raises(ValidationError):
+        ScoreBreakdown(llm=101, deterministic=100, skills=50, role=50, seniority=50, location=50)

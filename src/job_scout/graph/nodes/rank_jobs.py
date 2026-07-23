@@ -10,9 +10,10 @@ from collections.abc import Iterator
 
 from job_scout.config import get_settings
 from job_scout.graph.prompts.rank_jobs import RANK_JOBS_PROMPT
-from job_scout.graph.schemas import JobPosting, JobScores, Profile, RankedJob
+from job_scout.graph.schemas import JobPosting, JobScore, JobScores, Profile, RankedJob, ScoreBreakdown
 from job_scout.graph.state import AgentState
 from job_scout.llm import ensure_budget, get_chat_model
+from job_scout.scoring import deterministic_components, hybrid_score
 
 BATCH_SIZE = 5
 
@@ -62,24 +63,48 @@ def rank_jobs(state: AgentState) -> dict:
     ensure_budget(calls, n_batches, settings.max_llm_calls_per_run)
 
     model = get_chat_model(settings.scout_model, temperature=0.0).with_structured_output(JobScores)
-    ranked: list[RankedJob] = []
+    scores_by_id: dict[str, JobScore] = {}
     for batch in _batches(jobs, BATCH_SIZE):
         prompt = RANK_JOBS_PROMPT.format(profile=_render_profile(profile), jobs=_render_jobs(batch))
         result: JobScores = model.invoke(prompt)
         calls += 1
         for score in result.scores:
-            job = by_id.get(score.job_id)
-            if job is None:
-                continue
-            ranked.append(
-                RankedJob(
-                    job=job,
-                    fit_score=score.fit_score,
-                    fit_explanation=score.fit_explanation,
-                    matched_skills=score.matched_skills,
-                    gaps=score.gaps,
-                )
-            )
+            if score.job_id in by_id:
+                scores_by_id[score.job_id] = score
 
-    ranked.sort(key=lambda r: r.fit_score, reverse=True)
+    ranked: list[RankedJob] = []
+    for job in jobs:
+        components = deterministic_components(profile, job)
+        assessment = scores_by_id.get(job.job_id)
+        llm_score = assessment.fit_score if assessment else components.total
+        ranked.append(
+            RankedJob(
+                job=job,
+                fit_score=hybrid_score(components.total, llm_score),
+                fit_explanation=(
+                    assessment.fit_explanation
+                    if assessment
+                    else "The model returned no assessment for this job; the displayed fit uses deterministic signals only."
+                ),
+                matched_skills=assessment.matched_skills if assessment else [],
+                gaps=assessment.gaps if assessment else [],
+                score_breakdown=ScoreBreakdown(
+                    llm=llm_score,
+                    deterministic=components.total,
+                    skills=components.skills,
+                    role=components.role,
+                    seniority=components.seniority,
+                    location=components.location,
+                ),
+            )
+        )
+
+    ranked.sort(
+        key=lambda result: (
+            -result.fit_score,
+            -(result.score_breakdown.deterministic if result.score_breakdown else 0),
+            -(result.score_breakdown.llm if result.score_breakdown else 0),
+            result.job.job_id,
+        )
+    )
     return {"ranked_jobs": ranked, "llm_calls": calls}

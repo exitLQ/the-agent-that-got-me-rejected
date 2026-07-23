@@ -60,6 +60,17 @@ class JobScores(BaseModel):
     scores: list[JobScore]
 
 
+class ScoreBreakdown(BaseModel):
+    """Auditable inputs to the final hybrid fit score."""
+
+    llm: int = Field(ge=0, le=100)
+    deterministic: int = Field(ge=0, le=100)
+    skills: int = Field(ge=0, le=100)
+    role: int = Field(ge=0, le=100)
+    seniority: int = Field(ge=0, le=100)
+    location: int = Field(ge=0, le=100)
+
+
 class RankedJob(BaseModel):
     """A job scored against the candidate profile."""
 
@@ -68,6 +79,7 @@ class RankedJob(BaseModel):
     fit_explanation: str
     matched_skills: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
+    score_breakdown: ScoreBreakdown | None = None
 
 
 class EmphasisItem(BaseModel):

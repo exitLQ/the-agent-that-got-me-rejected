@@ -30,7 +30,7 @@ flowchart TB
     direction TB
     S((START)) --> FJ
     FJ["fetch_jobs<br/>LLM picks search args via tool call"] --> RJ
-    RJ["rank_jobs<br/>batched LLM scoring · BATCH_SIZE=5"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
+    RJ["rank_jobs<br/>batched model assessment + deterministic components<br/>hybrid = 60% rules + 40% model"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
     D -->|"no · under 2 loops"| RQ["reformulate_query<br/>broaden the query"]
     RQ --> FJ
     D -->|"yes · or cap hit"| E((END))
@@ -83,9 +83,11 @@ flowchart TB
    (pypdf), then `extract_profile` turns the text into a typed `Profile` with one
    structured-output LLM call — *before* the graph, so it's extracted once.
 2. **The agent graph.** `runner.py` feeds the profile into the LangGraph:
-   `fetch_jobs` (the LLM chooses the search arguments) → `rank_jobs` (batched fit
-   scoring) → a conditional edge that either loops through `reformulate_query`
-   (max 2) to broaden the search, or ends.
+   `fetch_jobs` (the LLM chooses the search arguments) → `rank_jobs` (batched
+   model assessment plus deterministic skill, role, seniority, and location
+   components) → a conditional edge that either loops through
+   `reformulate_query` (max 2) to broaden the search, or ends. The displayed
+   score uses 60% deterministic rules and 40% model assessment.
 3. **Job sources.** `fetch_jobs` calls `run_search`. With `OFFLINE_MODE=true`,
    it returns directly from the committed cache and never initializes a live
    adapter. With offline mode disabled, it uses the JSearch → Adzuna → Remotive

@@ -194,6 +194,8 @@ body::after {
 .js-remote, .js-source { font-size: 0.66rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
   border-radius: 5px; padding: 2px 7px; line-height: 1.5; }
 .js-remote { color: var(--js-accent); border: 1px solid rgba(14,110,74,0.35); }
+.js-score-breakdown { margin: 0.55rem 0; color: var(--js-muted); font: 500 0.68rem/1.55 monospace; }
+.js-score-breakdown span { display: inline-block; margin-right: 0.65rem; white-space: nowrap; }
 .js-source { color: var(--body-text-color-subdued); border: 1px solid var(--border-color-primary); }
 .js-job-why { font-size: 0.92rem; line-height: 1.55; margin: 12px 0 0; }
 
@@ -322,10 +324,10 @@ def _fit_class(score: int) -> str:
 
 
 def _fit_ring(score: int) -> str:
-    """Render the fit score as a conic-gradient gauge."""
+    """Render the hybrid fit score as a conic-gradient gauge."""
     return (
         f'<div class="js-fit-ring {_fit_class(score)}" style="--val:{score}" '
-        f'role="img" aria-label="Fit score {score} out of 100">'
+        f'role="img" aria-label="Hybrid fit score {score} out of 100">'
         f'<span class="js-fit-num">{score}</span></div>'
     )
 
@@ -342,6 +344,16 @@ def _job_card(ranked: RankedJob, index: int) -> str:
     source = f'<span class="js-source">{escape(job.source)}</span>'
     matched = _chips(ranked.matched_skills, "match", 6)
     gaps = _chips(ranked.gaps, "gap", 4)
+    breakdown = ""
+    if ranked.score_breakdown:
+        score = ranked.score_breakdown
+        breakdown = (
+            '<div class="js-score-breakdown" aria-label="Hybrid score breakdown">'
+            f"<span>rules {score.deterministic}</span><span>model {score.llm}</span>"
+            f"<span>skills {score.skills}</span><span>role {score.role}</span>"
+            f"<span>seniority {score.seniority}</span><span>location {score.location}</span>"
+            "</div>"
+        )
     delay = f"animation-delay:{min(index, 8) * 55}ms"
     return (
         f'<div class="js-job" style="{delay}">'
@@ -351,6 +363,7 @@ def _job_card(ranked: RankedJob, index: int) -> str:
         f"{_fit_ring(ranked.fit_score)}"
         "</div>"
         f'<p class="js-job-why">{escape(ranked.fit_explanation)}</p>'
+        f"{breakdown}"
         f"{matched}{gaps}"
         "</div>"
     )
