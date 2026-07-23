@@ -1,4 +1,4 @@
-# Phase 1 — Build the agent, instrumented from minute one
+# Job Scout notebook notes
 
 The companion notebook is [`../phase1_walkthrough.ipynb`](../phase1_walkthrough.ipynb).
 
@@ -32,5 +32,7 @@ dataset and skips tracing). Add keys for live jobs and Opik traces.
 
 ## Next steps
 
-Phase 2 adds the tailoring node and the full evaluation stack (datasets,
-metrics, online rules). Tag `phase-1` marks this blog-ready checkpoint.
+Planned work includes local model support, offline mode, local observability,
+privacy controls, and an evaluation stack. See
+[`../../docs/local_first_plan.md`](../../docs/local_first_plan.md). The
+`phase-1` tag is retained only for compatibility with existing trace filters.

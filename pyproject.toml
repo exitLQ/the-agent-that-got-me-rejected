@@ -5,7 +5,7 @@ description = "A LangGraph job-matching agent with full Opik observability."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
-authors = [{ name = "Shantanu Ladhwe" }]
+authors = [{ name = "exitLQ" }]
 
 dependencies = [
     "langgraph>=1.1",

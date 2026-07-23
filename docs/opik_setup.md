@@ -1,8 +1,8 @@
 # Opik setup
 
-Job Scout traces every run in [Opik](https://www.comet.com/docs/opik/) (Comet's
-LLM observability tool). This guide covers Phase 1. Later sections are stubs that
-Phases 2 and 3 fill in.
+Job Scout can optionally trace runs in
+[Opik](https://www.comet.com/docs/opik/). This integration is not required for
+local development.
 
 ## 1. Account & keys
 
@@ -31,20 +31,19 @@ Each run wraps the compiled graph with `track_langgraph`, which:
 
 Per run we also attach:
 
-- **The uploaded CV PDF** as a trace attachment (`attach_cv`) — Phase 2's
-  PDF-aware judge reasons over it.
+- **The uploaded CV PDF** as a trace attachment (`attach_cv`) for optional
+  PDF-aware evaluation.
 - **Metadata**: `git_sha`, `model`, `jobs_source`, reformulation count, job
   counts.
-- **Tags**: `phase-1`, and `ui` (app) or `batch` (baseline runner).
-- **thread_id**: the Gradio session id, so Phase 2's second invocation lands on
-  the same thread.
+- **Tags**: run origin such as `ui` or `batch`.
+- **thread_id**: the Gradio session id, allowing related invocations to be
+  grouped.
 
 ## 3. Prompt library
 
 The prompt constants in `src/job_scout/graph/prompts/` are registered in the Opik
 prompt library at startup (`register_prompts`). The local constants remain the
-source of truth; Opik mirrors them and versions on content change. Phase 3's
-optimizer depends on this version history.
+source of truth; Opik mirrors them and creates a version when content changes.
 
 ## 4. Verifying it works
 
@@ -52,12 +51,7 @@ Run the app (`make app`), upload a fixture CV, and open the project in Opik. You
 should see: the span tree, a working **Show Agent Graph**, a cost > $0 (for API
 models), and the CV attached to the trace.
 
-## 5. Online evaluation rules — _Phase 2_
+## 5. Optional evaluation
 
-_To be documented in Phase 2: configuring Hallucination + FitExplanationQuality
-online rules, including the PDF-attachment-aware judge._
-
-## 6. Annotation queues — _Phase 2_
-
-_To be documented in Phase 2: annotation queue over low-fit and
-fabrication-flagged traces._
+Evaluation rules and annotation workflows are not required for the local
+application. Add them only when an external observability workflow is needed.

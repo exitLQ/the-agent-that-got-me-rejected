@@ -1,9 +1,8 @@
-# Phase 1 findings
+# Baseline findings
 
 The baseline batch (`scripts/run_batch.py`) surfaces failures and weaknesses.
-**These are documented here, not fixed** — fixing happens in Phase 3 through the
-Ollie / Test Suite workflow, so the fix itself becomes content. Phase 1's job is
-to make the weaknesses observable.
+These are documented before optimization so later changes can be compared
+against measured behavior.
 
 ## How to reproduce
 
@@ -45,7 +44,7 @@ headroom** Phase 3's optimizer targets.
 
 **Source usage:** Remotive served 16/19 runs, Adzuna only 3, cache 0.
 
-## Confirmed weaknesses (observed — do NOT fix in Phase 1/2)
+## Confirmed baseline weaknesses
 
 1. **Adzuna is almost never used (3/19), despite valid keys.** The LLM in
    `fetch_jobs` chooses tool arguments that return no Adzuna results, so the
