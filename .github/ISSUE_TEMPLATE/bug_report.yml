@@ -1,0 +1,83 @@
+name: Bug report
+description: Report a reproducible problem in the application, launcher, or documentation.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. Do not include API keys, resume content, personal data, or security vulnerabilities.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and pull requests.
+          required: true
+        - label: I reproduced the problem on the latest main branch.
+          required: true
+        - label: This report contains no credentials, resume content, or personal data.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Runtime mode
+      description: Select the configuration in which the problem occurs.
+      options:
+        - Offline with Ollama
+        - Online with OpenAI
+        - Online with Anthropic
+        - Online with xAI
+        - Online with Groq
+        - Documentation or CI only
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      description: Run `git rev-parse --short HEAD` and paste the result.
+      placeholder: c944dd6
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include operating system, Python version, and relevant local service versions.
+      placeholder: Windows 11, Python 3.12, Ollama 0.x
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reliable sequence that demonstrates the problem.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Paste only relevant output after removing secrets and personal data.
+      render: shell

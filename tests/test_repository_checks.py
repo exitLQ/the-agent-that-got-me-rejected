@@ -30,6 +30,33 @@ def test_shared_test_fixture_keeps_the_ci_baseline_offline():
     assert 'os.environ["CLOUD_LLM_ENABLED"] = "false"' in conftest
 
 
+def test_required_community_health_files_are_present():
+    required = [
+        "CODE_OF_CONDUCT.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/ISSUE_TEMPLATE/feature_request.yml",
+        ".github/pull_request_template.md",
+    ]
+
+    assert all((checks.ROOT / path).is_file() for path in required)
+
+
+def test_issue_forms_have_required_github_metadata():
+    templates = [
+        checks.ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
+        checks.ROOT / ".github" / "ISSUE_TEMPLATE" / "feature_request.yml",
+    ]
+
+    for template in templates:
+        text = template.read_text(encoding="utf-8")
+        assert text.startswith("name:")
+        assert "\ndescription:" in text
+        assert "\nbody:" in text
+
+
 def test_every_workflow_action_is_pinned_to_full_sha():
     assert checks.check_action_pins() == []
 

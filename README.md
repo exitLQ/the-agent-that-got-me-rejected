@@ -1456,6 +1456,7 @@ start.ps1             Windows one-command launcher
 start.sh              Linux one-command launcher
 start.command         macOS one-command launcher
 tests/                Offline automated tests
+.github/              CI, dependency updates, issue forms, and pull request template
 ```
 
 ## Common commands
@@ -1500,6 +1501,16 @@ Never commit `.env` or API keys.
 - [Architecture](docs/architecture.md)
 - [Adding job sources](docs/extending_sources.md)
 - [Optional Opik setup](docs/opik_setup.md)
+
+## Community
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security policy](SECURITY.md)
+
+Bug reports and feature requests use structured GitHub issue forms. Pull
+requests receive a checklist covering tests, documentation, privacy, network
+boundaries, credentials, and sponsor preservation.
 
 ## License
 

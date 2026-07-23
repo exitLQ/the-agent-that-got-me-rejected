@@ -1,0 +1,64 @@
+name: Feature request
+description: Propose a focused improvement that fits the project's local-first scope.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user problem first. Proposed features must preserve privacy, offline defaults, and lawful data access.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and pull requests.
+          required: true
+        - label: The request does not require prohibited scraping or unauthorized data access.
+          required: true
+        - label: I considered offline and privacy implications.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user need or limitation should be addressed?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Explain the desired behavior without requiring a specific implementation.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Local setup and launcher
+        - Resume extraction and privacy
+        - Job sources
+        - Matching and ranking
+        - Model providers
+        - User interface
+        - Observability
+        - Tests and CI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and network impact
+      description: State whether data leaves the machine, which service receives it, and how consent is enforced.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe workarounds or simpler options that were considered.

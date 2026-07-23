@@ -79,14 +79,21 @@ def check_sponsor_block() -> list[str]:
 
 
 def check_required_files() -> list[str]:
-    """Require launch, configuration, license, lock, and workflow files."""
+    """Require launch, configuration, community, license, lock, and workflow files."""
     required = [
         ".env.example",
+        "CODE_OF_CONDUCT.md",
+        "CONTRIBUTING.md",
         "LICENSE",
         "README.md",
+        "SECURITY.md",
         "pyproject.toml",
         "uv.lock",
         ".github/dependabot.yml",
+        ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/ISSUE_TEMPLATE/feature_request.yml",
+        ".github/pull_request_template.md",
         ".github/workflows/ci.yml",
         "scripts/start.py",
         "start.ps1",
