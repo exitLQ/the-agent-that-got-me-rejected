@@ -16,8 +16,11 @@ flowchart TB
   CVR -->|"transient CV text"| EP["profile.py · extract_profile<br/>1 LLM call · structured output"]
   CVR -->|"transient CV text"| COR["corpus.py<br/>typed addressable facts<br/>session memory only"]
   CVR -->|"delete temporary UI copy"| DEL["privacy.py<br/>temp-boundary deletion"]
-  EP -->|"Profile"| RUN
+  EP -->|"extracted Profile (unchanged)"| UI
+  UI -->|"effective Profile<br/>confirmed locations + remote choice"| RUN
   UI -->|"confirmed job + session state"| RUN
+  UI -->|"confirmed preference keyed by pseudonymous digest"| PREF["preferences.py<br/>local SQLite search_preferences<br/>separate from extracted Profile"]
+  PREF -->|"saved suggestions<br/>fresh confirmation still required"| UI
 
   subgraph ORCH["runner.py · orchestrator (UI + batch share it)"]
     RUN["stream_search / stream_tailoring / run_once<br/>measures cost + latency · streams node status"]
@@ -211,3 +214,12 @@ flowchart TB
     adapters ship; the sink writes atomically and returns a receipt whose
     digest and boundary metadata are verified. No Opik, annotation, or judge
     adapter is installed or discovered automatically.
+17. **Human-confirmed search preferences.** The Profile page presents extracted
+    locations and remote openness as editable suggestions, then requires a
+    fresh checkbox confirmation before search or persistence. `preferences.py`
+    validates and saves the human choice under a pseudonymous profile digest in
+    a separate SQLite table. The extracted profile remains unchanged for
+    evaluation and tailoring; only an effective copy with overridden
+    `locations` and `remote_ok` enters search, filtering, and ranking. Saved
+    choices can repopulate a later matching profile but never restore the
+    confirmation automatically.

@@ -149,11 +149,12 @@ out of Gradio and LangGraph state, omits the candidate name from ranking
 prompts, and disables Opik traces and attachments. The structured profile and
 ranked results remain in the current browser session until reset.
 
-Application tracking is deliberately separate from resume processing. SQLite
-stores job metadata, status, notes, and timestamps in
-`data/applications.db`. It never receives CV text, the extracted profile, API
-keys, prompts, or model responses. The database is local, is excluded from Git,
-and survives the wizard's `Start over` action.
+Local persistence is deliberately separate from resume processing. SQLite
+stores application-tracker job metadata, status, notes, and timestamps, plus
+confirmed search locations, remote choice, timestamp, and a pseudonymous
+profile digest in `data/applications.db`. It never receives CV text, the plain
+extracted profile, API keys, prompts, or model responses. The database is
+local, is excluded from Git, and survives the wizard's `Start over` action.
 
 For the strongest documented local boundary, combine privacy mode with
 `OFFLINE_MODE=true`, an Ollama model, and `OLLAMA_BASE_URL` on `localhost`.
@@ -284,19 +285,33 @@ On Linux or macOS:
 cp data/applications.db data/applications.backup.db
 ```
 
-Deleting the configured database resets the tracker permanently. The normal
-wizard reset does not delete it.
+Deleting the configured database permanently resets both the application
+tracker and saved search preferences. The normal wizard reset deletes neither.
 
 Prefer the operating-system launcher in section 3 for normal use.
 
 Open <http://localhost:7860>.
 
 Use a synthetic PDF from `data/fixture_cvs/` for the first run. The application
-extracts the profile first and then starts the job-search graph.
+extracts the profile first, asks you to confirm the search scope, and only then
+starts the job-search graph.
 
 ### Location behavior
 
-The locations extracted from the CV control a deterministic post-filter:
+The profile page separates extracted data from search preferences:
+
+1. Review `Extracted resume data (unchanged)`.
+2. Under `Where should we search?`, add or remove locations.
+3. Choose whether remote jobs should be included.
+4. Tick the confirmation checkbox.
+5. Press `Find jobs`.
+
+CV locations and remote openness are suggestions, not automatic decisions.
+Editing a location or the remote checkbox clears confirmation. A search cannot
+start until at least one location is selected or remote search is enabled and
+the scope is confirmed.
+
+The confirmed effective locations control the deterministic post-filter:
 
 - exact city matches appear first;
 - geographically eligible remote roles appear next when remote work is
@@ -307,6 +322,12 @@ The locations extracted from the CV control a deterministic post-filter:
 Location matching ignores case, accents, and punctuation. It also recognizes
 common translations such as `Munich` and `München`. Unknown locations are not
 assigned to a guessed country.
+
+Confirmed preferences are stored in the configured local
+`APPLICATION_DB_PATH` and are loaded on a later matching profile. They still
+require a new confirmation. The database stores the selected locations,
+remote Boolean, timestamp, and a pseudonymous profile digest; it does not store
+the extracted profile or CV text in the preference table.
 
 ### Reading the fit score
 

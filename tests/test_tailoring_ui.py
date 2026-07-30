@@ -184,6 +184,9 @@ def test_search_does_not_preselect_tailoring_job(monkeypatch, sample_profile):
             sample_profile,
             "thread-1",
             "ollama:qwen3:8b",
+            ["Vienna, Austria"],
+            False,
+            True,
         )
     )[-1]
 
@@ -356,14 +359,16 @@ def test_reset_clears_tailoring_state_and_creates_fresh_thread():
     first = app.reset()
     second = app.reset()
 
-    assert len(first) == 24
+    assert len(first) == 28
     assert first[3]["visible"] is False
     assert first[13]["choices"] == []
     assert first[14] is False
     assert first[16:18] == ("", "")
     assert first[18]["visible"] is False
     assert first[19:23] == ("", "", None, None)
-    assert first[23] != second[23]
+    assert first[23]["value"] == []
+    assert first[24:27] == (False, False, "")
+    assert first[27] != second[27]
 
 
 def test_reset_deletes_the_current_transient_pdf(monkeypatch):

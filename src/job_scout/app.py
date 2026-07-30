@@ -34,6 +34,11 @@ from job_scout.llm import (
     qualify_model,
     validate_model_configuration,
 )
+from job_scout.preferences import (
+    SearchPreferences,
+    apply_search_preferences,
+    get_search_preference_store,
+)
 from job_scout.privacy import delete_temporary_upload
 from job_scout.profile import extract_profile
 from job_scout.renderer import ApplicationPdfError, render_application_pdf
@@ -376,6 +381,7 @@ def _profile_html(profile: Profile | None) -> str:
     languages = escape(", ".join(profile.languages) or "—")
     return (
         '<div class="js-card">'
+        '<p class="js-section-label">Extracted resume data (unchanged)</p>'
         f'<p class="js-profile-name">{escape(profile.name or "Candidate")}</p>'
         f'<p class="js-profile-sub">{escape(profile.seniority.title())} · '
         f"{escape(', '.join(profile.primary_roles) or '—')}</p>"
@@ -650,6 +656,67 @@ def _tailoring_html(
     )
 
 
+def _preference_controls(profile: Profile) -> tuple[dict, bool, bool, str]:
+    """Return editable search controls from saved choices or CV suggestions."""
+    locations = list(profile.locations)
+    remote = profile.remote_ok
+    loaded = False
+    warning = ""
+    try:
+        stored = get_search_preference_store().get(profile)
+    except Exception:  # noqa: BLE001 - preferences must not block profile review
+        stored = None
+        warning = (
+            "Saved preferences could not be loaded. Review the resume suggestions "
+            "and confirm this search."
+        )
+    if stored is not None:
+        locations = list(stored.preferences.locations)
+        remote = stored.preferences.remote
+        loaded = True
+
+    choices = []
+    seen = set()
+    for value in [*profile.locations, *locations]:
+        key = value.casefold()
+        if key not in seen:
+            choices.append(value)
+            seen.add(key)
+    if warning:
+        message = warning
+        error = True
+    elif loaded:
+        message = (
+            "Saved search preferences loaded. Review and confirm them before searching."
+        )
+        error = False
+    else:
+        message = (
+            "Resume locations are suggestions only. Edit them and confirm where to search."
+        )
+        error = False
+    return (
+        gr.update(choices=choices, value=locations),
+        remote,
+        False,
+        _status(message, error=error),
+    )
+
+
+def _preference_summary_html(preferences: SearchPreferences) -> str:
+    locations = ", ".join(preferences.locations) or "none"
+    remote = "included" if preferences.remote else "excluded"
+    return (
+        '<div class="js-footer">human-confirmed search scope · '
+        f"locations: {escape(locations)} · remote: {remote}</div>"
+    )
+
+
+def on_preferences_change():
+    """Any edited preference requires a fresh explicit confirmation."""
+    return False, ""
+
+
 def _tailor_footer_html(result: TailoringResult) -> str:
     """Render tailoring metadata without exposing trace links when disabled."""
     settings = get_settings()
@@ -921,7 +988,18 @@ def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: 
     go = gr.update(visible=False), gr.update(visible=True)
 
     if not file_path:
-        yield (*stay, gr.update(), _status("Please drop a PDF resume.", error=True), None, None, None)
+        yield (
+            *stay,
+            gr.update(),
+            _status("Please drop a PDF resume.", error=True),
+            None,
+            None,
+            None,
+            gr.update(choices=[], value=[]),
+            False,
+            False,
+            "",
+        )
         return
     try:
         selected_model = qualify_model(provider, model_name)
@@ -929,19 +1007,52 @@ def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: 
     except (ModelConfigurationError, OllamaRuntimeError) as exc:
         if get_settings().privacy_mode:
             delete_temporary_upload(file_path)
-        yield (*stay, gr.update(), _status(f"Model is not ready: {exc}", error=True), None, None, None)
+        yield (
+            *stay,
+            gr.update(),
+            _status(f"Model is not ready: {exc}", error=True),
+            None,
+            None,
+            None,
+            gr.update(choices=[], value=[]),
+            False,
+            False,
+            "",
+        )
         return
     try:
         cv_text = extract_cv_text(file_path)
     except CVReadError as exc:
-        yield (*stay, gr.update(), _status(f"Could not read that PDF: {exc}", error=True), None, None, None)
+        yield (
+            *stay,
+            gr.update(),
+            _status(f"Could not read that PDF: {exc}", error=True),
+            None,
+            None,
+            None,
+            gr.update(choices=[], value=[]),
+            False,
+            False,
+            "",
+        )
         return
     finally:
         if get_settings().privacy_mode:
             delete_temporary_upload(file_path)
 
     corpus = build_candidate_corpus(cv_text)
-    yield (*go, _loading_html("Reading your resume…"), "", gr.update(), selected_model, gr.update())
+    yield (
+        *go,
+        _loading_html("Reading your resume…"),
+        "",
+        gr.update(),
+        selected_model,
+        gr.update(),
+        gr.update(choices=[], value=[]),
+        False,
+        False,
+        "",
+    )
     try:
         profile = extract_profile(
             cv_text,
@@ -952,13 +1063,39 @@ def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: 
     except Exception as exc:  # noqa: BLE001 - show a friendly error and return to start
         cv_text = ""
         corpus = []
-        yield (*stay, gr.update(), _status(f"Couldn't read a profile: {exc}", error=True), None, None, None)
+        yield (
+            *stay,
+            gr.update(),
+            _status(f"Couldn't read a profile: {exc}", error=True),
+            None,
+            None,
+            None,
+            gr.update(choices=[], value=[]),
+            False,
+            False,
+            "",
+        )
         return
     cv_text = ""
-    yield (*go, _profile_html(profile), "", profile, selected_model, corpus)
+    yield (
+        *go,
+        _profile_html(profile),
+        "",
+        profile,
+        selected_model,
+        corpus,
+        *_preference_controls(profile),
+    )
 
 
-def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
+def on_find(
+    profile: Profile | None,
+    thread_id: str,
+    model_name: str | None,
+    preference_locations: list[str] | None,
+    preference_remote: bool,
+    preferences_confirmed: bool,
+):
     """Step 2 → 3: run the job-finding graph for the extracted profile and stream results.
 
     Outputs include page visibility, rendered results, both job selectors, and state.
@@ -974,8 +1111,53 @@ def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
             [],
             gr.update(),
             False,
+            _status("Upload a resume before confirming search preferences.", error=True),
         )
         return
+    if not preferences_confirmed:
+        yield (
+            gr.update(visible=True),
+            gr.update(visible=False),
+            gr.update(),
+            "",
+            gr.update(),
+            [],
+            gr.update(),
+            False,
+            _status("Review and confirm where to search before continuing.", error=True),
+        )
+        return
+    try:
+        preferences = SearchPreferences(
+            locations=preference_locations or [],
+            remote=preference_remote,
+        )
+    except Exception:
+        yield (
+            gr.update(visible=True),
+            gr.update(visible=False),
+            gr.update(),
+            "",
+            gr.update(),
+            [],
+            gr.update(),
+            False,
+            _status(
+                "Select at least one valid location or enable remote search.",
+                error=True,
+            ),
+        )
+        return
+
+    preference_status = ""
+    try:
+        get_search_preference_store().save(profile, preferences)
+    except Exception:  # noqa: BLE001 - use confirmed values even if persistence fails
+        preference_status = _status(
+            "These preferences will be used now but could not be saved locally.",
+            error=True,
+        )
+    effective_profile = apply_search_preferences(profile, preferences)
 
     yield (
         *go,
@@ -985,10 +1167,11 @@ def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
         gr.update(),
         gr.update(),
         False,
+        preference_status,
     )
     result = RunResult()
     for kind, payload in stream_search(
-        profile,
+        effective_profile,
         thread_id=thread_id,
         tags=["phase-1", "ui"],
         model_name=model_name,
@@ -1002,6 +1185,7 @@ def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
                 gr.update(),
                 gr.update(),
                 False,
+                preference_status,
             )
         elif kind == "result":
             result = payload  # type: ignore[assignment]
@@ -1014,11 +1198,12 @@ def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
     yield (
         *go,
         _results_html(result),
-        _footer_html(result),
+        _footer_html(result) + _preference_summary_html(preferences),
         gr.update(choices=choices, value=selected),
         result.ranked_jobs,
         gr.update(choices=choices, value=None, interactive=bool(choices)),
         False,
+        preference_status,
     )
 
 
@@ -1218,6 +1403,10 @@ def reset(application_pdf_path: str | None = None):
         "",
         None,
         None,
+        gr.update(choices=[], value=[]),
+        False,
+        False,
+        "",
         str(uuid4()),
     )
 
@@ -1297,6 +1486,27 @@ def build_app() -> gr.Blocks:
             gr.HTML(_stepper(2))
             gr.HTML('<p class="js-section-label">Your profile</p>')
             profile_out = gr.HTML()
+            gr.HTML('<p class="js-section-label">Where should we search?</p>')
+            preference_locations_input = gr.Dropdown(
+                choices=[],
+                value=[],
+                multiselect=True,
+                allow_custom_value=True,
+                label="Search locations",
+                info="Resume locations are suggestions. Add or remove cities and regions.",
+                interactive=True,
+            )
+            preference_remote_input = gr.Checkbox(
+                value=False,
+                label="Include remote jobs",
+            )
+            preferences_confirmed_input = gr.Checkbox(
+                value=False,
+                label=(
+                    "I reviewed these search preferences and confirm this search scope."
+                ),
+            )
+            preference_status = gr.HTML()
             find_btn = gr.Button("Find jobs", variant="primary", size="lg")
             change_btn = gr.Button("Upload a different resume", variant="secondary")
 
@@ -1385,11 +1595,30 @@ def build_app() -> gr.Blocks:
                 profile_state,
                 selected_model_state,
                 corpus_state,
+                preference_locations_input,
+                preference_remote_input,
+                preferences_confirmed_input,
+                preference_status,
             ],
+        )
+        preference_locations_input.input(
+            on_preferences_change,
+            outputs=[preferences_confirmed_input, preference_status],
+        )
+        preference_remote_input.input(
+            on_preferences_change,
+            outputs=[preferences_confirmed_input, preference_status],
         )
         find_btn.click(
             on_find,
-            inputs=[profile_state, thread_id, selected_model_state],
+            inputs=[
+                profile_state,
+                thread_id,
+                selected_model_state,
+                preference_locations_input,
+                preference_remote_input,
+                preferences_confirmed_input,
+            ],
             outputs=[
                 page_profile,
                 page_results,
@@ -1399,6 +1628,7 @@ def build_app() -> gr.Blocks:
                 ranked_jobs_state,
                 tailor_job_input,
                 tailor_consent_input,
+                preference_status,
             ],
         )
         tailor_job_input.change(
@@ -1505,6 +1735,10 @@ def build_app() -> gr.Blocks:
             tailor_footer,
             tailoring_result_state,
             application_pdf_state,
+            preference_locations_input,
+            preference_remote_input,
+            preferences_confirmed_input,
+            preference_status,
             thread_id,
         ]
         change_btn.click(reset, inputs=[application_pdf_state], outputs=reset_outputs)

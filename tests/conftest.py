@@ -29,14 +29,21 @@ os.environ["APPLICATION_DB_PATH"] = ":memory:"
 
 from job_scout.config import get_settings  # noqa: E402
 from job_scout.graph.schemas import JobPosting, Profile  # noqa: E402
+from job_scout.preferences import get_search_preference_store  # noqa: E402
 
 FIXTURE_CVS = Path(__file__).resolve().parent.parent / "data" / "fixture_cvs"
 
 
 @pytest.fixture(autouse=True)
 def _clear_settings_cache():
+    if get_search_preference_store.cache_info().currsize:
+        get_search_preference_store().close()
+    get_search_preference_store.cache_clear()
     get_settings.cache_clear()
     yield
+    if get_search_preference_store.cache_info().currsize:
+        get_search_preference_store().close()
+    get_search_preference_store.cache_clear()
     get_settings.cache_clear()
 
 

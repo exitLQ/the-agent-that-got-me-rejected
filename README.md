@@ -27,11 +27,35 @@ job applications.
 - Bounded concurrent job-fit ranking with a transparent hybrid score
 - Evidence-backed matched skills and technology gaps
 - Explicitly confirmed, source-linked application drafts with visible warnings
+- Human-confirmed search locations and remote preference
+- Local application-review PDF export
+- Deterministic offline evaluation with opt-in adapter boundaries
 - Local SQLite application tracker with status and private notes
 - Four-step Gradio web interface
 - Optional Opik tracing
 - Offline fallback data for development and testing
 - Guardrails for loop count and LLM-call budget
+
+## Version 0.4.0
+
+Version `0.4.0` completes the source-grounded application workflow. It adds the
+temporary CV corpus, strict tailoring contracts, isolated graph entry, explicit
+job and data-transfer confirmation, deterministic fabrication checks, a fourth
+application-review page, local PDF export, deterministic offline evaluation,
+opt-in evaluation interfaces, and human-confirmed search preferences.
+
+No GitHub setting activates `0.4.0`. After pulling this commit, synchronize the
+locked environment and restart the application:
+
+```powershell
+uv sync --all-extras --all-groups
+.\start.ps1
+```
+
+The first start creates or extends the existing local SQLite database. Existing
+`0.3.0` application records remain available. The new
+`search_preferences` table is created independently and requires no manual
+migration command.
 
 ## Version 0.3.0
 
@@ -84,7 +108,7 @@ creating a duplicate. Notes are trimmed and limited to 2,000 characters.
 Removing a record affects only that selected job and does not delete a source
 PDF or any other saved application.
 
-### Version 0.4.0 development: temporary CV corpus
+### Version 0.4.0 implementation: temporary CV corpus
 
 The first application-tailoring foundation is implemented but does not yet
 generate application documents. Immediately after a PDF is read, the UI builds
@@ -115,7 +139,7 @@ steps will require generated claims to reference these item identifiers. The
 separation keeps the parsing and privacy boundary independently testable before
 any model receives corpus content.
 
-### Version 0.4.0 development: strict tailoring contracts
+### Version 0.4.0 implementation: strict tailoring contracts
 
 The second application-tailoring foundation defines the exact structured output
 that a later model call must produce. Unknown fields are rejected instead of
@@ -150,7 +174,7 @@ checks intentionally remain outside the data model and will be implemented by
 the deterministic fabrication validator. No tailoring model is called and no
 application material is exposed in the UI at this development step.
 
-### Version 0.4.0 development: isolated tailoring node
+### Version 0.4.0 implementation: isolated tailoring node
 
 The third application-tailoring step implements an isolated
 `tailor_application` graph node. It is intentionally not routed from the active
@@ -199,7 +223,7 @@ supports a generated claim. The deterministic validator in step five will
 provide that decision, so the current node remains unreachable from the
 application.
 
-### Version 0.4.0 development: entry router and tailoring runner
+### Version 0.4.0 implementation: entry router and tailoring runner
 
 The fourth application-tailoring step connects the isolated node to the shared
 LangGraph through a conditional entry router. The route is decided only from
@@ -237,7 +261,7 @@ wizard step obtained an explicit user selection. The deterministic fabrication
 validator remained the next required gate before generated material could be
 displayed.
 
-### Version 0.4.0 development: deterministic fabrication validator
+### Version 0.4.0 implementation: deterministic fabrication validator
 
 The fifth application-tailoring step adds `validate_tailoring` immediately
 after `tailor`:
@@ -300,7 +324,7 @@ contains only generated claims, corpus identifiers, ratios, reasons, counts,
 and threshold values. At this fifth development step, the Gradio interface did
 not invoke tailoring yet.
 
-### Version 0.4.0 development: fourth Gradio wizard step
+### Version 0.4.0 implementation: fourth Gradio wizard step
 
 The sixth application-tailoring step exposes the grounded pipeline through a
 fourth wizard page. The complete interactive flow is now:
@@ -360,7 +384,7 @@ draft, report, selection, and confirmation, and creates a fresh trace thread.
 Saved SQLite tracker entries remain untouched. The following seventh step adds
 the PDF download while preserving this complete on-screen review.
 
-### Version 0.4.0 development: local application PDF
+### Version 0.4.0 implementation: local application PDF
 
 The seventh application-tailoring step adds a local `fpdf2` renderer and a
 `Download application review PDF` action to the fourth wizard page. The PDF is
@@ -406,7 +430,7 @@ discards a valid text application. The copyable cover letter, source-linked
 suggestions, validation report, and honesty note remain visible, while the UI
 shows a non-technical local-rendering error and hides the download action.
 
-### Version 0.4.0 development: local deterministic evaluation
+### Version 0.4.0 implementation: local deterministic evaluation
 
 The eighth application-tailoring step adds an offline evaluator for questions
 with mechanically verifiable answers. It deliberately does not score
@@ -479,7 +503,7 @@ warnings. Its scores verify the evaluator itself; they are not a quality claim
 about a real model or a production run. Subjective judges and external
 evaluation interfaces remain separate and optional.
 
-### Version 0.4.0 development: optional evaluation interfaces
+### Version 0.4.0 implementation: optional evaluation interfaces
 
 The ninth application-tailoring step introduces a narrow adapter boundary for
 future evaluation integrations without enabling one. Two Python protocols in
@@ -525,6 +549,72 @@ per-call external confirmation, and tests for its privacy and receipt
 contract. The application and CLI never discover or activate third-party
 adapters automatically.
 
+### Version 0.4.0 implementation: human-confirmed search preferences
+
+The tenth and final application-tailoring step removes location and remote-work
+guesses from the search decision. After profile extraction, the Profile page
+shows two deliberately separate sections:
+
+- `Extracted resume data (unchanged)` displays what the extraction model
+  measured; and
+- `Where should we search?` contains editable locations, a remote-work choice,
+  and a confirmation checkbox controlled by the human user.
+
+CV locations and `remote_ok` are suggestions only. Up to ten custom locations
+can be added, each limited to 100 characters. Values are trimmed, normalized,
+and deduplicated case-insensitively. URLs are rejected. A confirmed scope must
+contain at least one location or enable remote search. Editing either control
+clears the checkbox and any earlier status, so every changed scope needs a new
+confirmation.
+
+No search, preference write, job-provider call, or model call occurs before the
+server validates the confirmation and scope. The search runs on an effective
+copy created with:
+
+```python
+effective_profile = extracted_profile.model_copy(
+    update={
+        "locations": preferences.locations,
+        "remote_ok": preferences.remote,
+    }
+)
+```
+
+The extracted `Profile` in Gradio state is never mutated. Tailoring continues
+to receive that extracted profile and the source corpus. Deterministic profile
+evaluation therefore grades the measurement, not a later user decision. The
+effective copy alone enters the search graph, job-source selection, location
+filter, ranking, and search trace. The results footer repeats the confirmed
+locations and whether remote jobs were included.
+
+Confirmed choices are stored locally in the same configured SQLite file as the
+application tracker but in a separate `search_preferences` table. That table
+contains only:
+
+- a SHA-256 profile key;
+- the confirmed location list as JSON;
+- the confirmed remote Boolean; and
+- the update timestamp.
+
+The key is a pseudonymous digest of normalized identity-related structured
+profile fields. Plain names, roles, skills, CV text, summaries, contact data,
+model prompts, and API keys are not columns. The digest should still be treated
+as local personal data. Stored locations are also personal preference data.
+Neither is committed or uploaded by the application.
+
+On a later upload whose extracted identity fields produce the same digest, the
+saved locations and remote choice replace the CV suggestions in the controls.
+They are not silently trusted: the confirmation checkbox always starts clear.
+Extraction differences can produce another digest, in which case the current
+CV suggestions are shown again.
+
+If the preference database cannot be read, the page falls back to CV
+suggestions and reports the problem. If a confirmed choice cannot be saved, it
+is still used for the current search and the UI reports that persistence
+failed. `Start over` clears the current controls but keeps confirmed choices
+for the next matching upload. Removing the configured SQLite database removes
+both application-tracker entries and saved search preferences.
+
 ### July 2026 development-dependency security update
 
 The locked development environment now requires JupyterLab `4.6.2` or newer
@@ -561,10 +651,11 @@ backup:
 Copy-Item data\applications.db data\applications.backup.db
 ```
 
-To reset the tracker, stop the application and remove
-`data/applications.db`. This deletion is intentionally not performed by the
-application or its `Start over` button. The wizard reset clears only temporary
-session results; saved applications remain in SQLite.
+To reset all locally persisted application data, stop the application and
+remove `data/applications.db`. This deletes both tracker records and confirmed
+search preferences and is intentionally not performed by the application or
+its `Start over` button. The wizard reset clears only temporary session
+results; saved applications and preferences remain in SQLite.
 
 ## Version 0.2.0
 
@@ -1605,7 +1696,8 @@ path is treated as a user-owned original, not a Gradio temporary upload.
 | Temporary uploaded PDF | Read locally by `pypdf` | Not required | Deleted when inside the OS temporary tree |
 | Raw extracted CV text | Passed to the configured extraction model | Not passed to LangGraph | Released and not stored in Gradio state |
 | Candidate name | Extracted for the local profile card | Excluded from ranking prompts | Remains in current structured UI state |
-| Structured profile | Created from the CV | Used for search and scoring | Remains until the wizard is reset |
+| Extracted structured profile | Created from the CV | Kept unchanged; used to build the effective search copy | Remains until the wizard is reset |
+| Confirmed search preferences | Suggested from the profile, then edited and confirmed by the user | Override only locations and remote choice in the effective search copy | Stored locally in SQLite under a pseudonymous profile digest |
 | Ranked jobs and metrics | Not present | Produced by the graph | Remain visible in the current session |
 | Cloud traces and attachments | Disabled | Disabled | Nothing is uploaded |
 

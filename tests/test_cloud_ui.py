@@ -96,7 +96,9 @@ def test_upload_rejects_blocked_provider_before_reading_resume(monkeypatch):
 
     assert len(events) == 1
     assert "Model is not ready: blocked" in events[0][3]
-    assert events[0][4:] == (None, None, None)
+    assert events[0][4:7] == (None, None, None)
+    assert events[0][7]["value"] == []
+    assert events[0][8:] == (False, False, "")
 
 
 def test_upload_keeps_selected_model_in_session_state(monkeypatch, sample_profile):
@@ -120,6 +122,9 @@ def test_upload_keeps_selected_model_in_session_state(monkeypatch, sample_profil
     assert events[-1][4] is sample_profile
     assert events[-1][5] == "anthropic:claude-sonnet-4-6"
     assert [item.text for item in events[-1][6]] == ["Python", "SQL"]
+    assert events[-1][7]["value"] == ["Berlin, Germany"]
+    assert events[-1][8] is True
+    assert events[-1][9] is False
     assert captured["model_name"] == "anthropic:claude-sonnet-4-6"
 
 
