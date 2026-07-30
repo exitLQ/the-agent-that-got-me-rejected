@@ -53,6 +53,8 @@ flowchart TB
 
   E -->|"RankedJobs or tailoring report"| RUN
   RUN -->|"ranked cards or draft + evidence + all warnings"| UI
+  UI -->|"validated local session models"| PDF["renderer.py<br/>fpdf2 application review PDF<br/>transient local file"]
+  PDF -->|"explicit download only"| U
   UI -->|"selected job + status + notes"| DB["applications.py<br/>local SQLite tracker"]
   DB -->|"saved application overview"| UI
 
@@ -181,3 +183,11 @@ flowchart TB
     A clean report remains labelled as a heuristic result, not a proof. Reset
     clears all temporary tailoring state and starts a fresh trace thread while
     leaving the local application tracker untouched.
+14. **Local application PDF.** After a confirmed tailoring run, `renderer.py`
+    checks that the selected job ID agrees across the ranked job, runner result,
+    and tailoring pack. It renders the cover letter, tailored CV suggestions,
+    exact source evidence, honesty note, and every validator warning with
+    `fpdf2`. The transient filename is derived from the opaque UI thread ID
+    rather than candidate data. Rendering performs no network or model call;
+    reset deletes the current temporary file, and renderer failure leaves the
+    text draft available.

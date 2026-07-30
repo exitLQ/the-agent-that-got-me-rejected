@@ -357,9 +357,54 @@ Private application-tracker notes are not inputs to the callback or runner.
 `Back to jobs` preserves the current search but invalidates the previous
 confirmation. `Start over` clears the profile, ranked jobs, temporary corpus,
 draft, report, selection, and confirmation, and creates a fresh trace thread.
-Saved SQLite tracker entries remain untouched. PDF download is intentionally
-deferred to step seven; this step supplies only the cover-letter copy action
-and the complete on-screen review.
+Saved SQLite tracker entries remain untouched. The following seventh step adds
+the PDF download while preserving this complete on-screen review.
+
+### Version 0.4.0 development: local application PDF
+
+The seventh application-tailoring step adds a local `fpdf2` renderer and a
+`Download application review PDF` action to the fourth wizard page. The PDF is
+created only after an explicitly confirmed tailoring run returns a valid
+`TailoringPack`. It contains:
+
+- a prominent local-review-draft label and a reminder that nothing is submitted
+  automatically;
+- the cover-letter draft;
+- the candidate name and structured profile summary;
+- selected, source-linked skills;
+- tailored CV experience bullets;
+- the exact corpus statements cited by each bullet and skill;
+- the honesty note;
+- the complete deterministic validation result; and
+- every individual warning when claims require review.
+
+The PDF is an application review package, not a claim that the material is
+submission-ready. A zero-warning report still states that the checks are not a
+guarantee of truth. If the validation report is unavailable, the document says
+not to use the draft until it has been checked.
+
+Rendering is deterministic and local. The renderer receives the already
+validated `Profile`, selected `RankedJob`, temporary redacted corpus, and
+`TailoringResult`; it makes no model or network call. The selected job ID must
+match both the runner result and the tailoring pack before a file is written.
+Generated values are treated only as text, control characters are removed,
+typographic punctuation is converted to PDF-safe equivalents, and unusually
+long tokens are split into bounded segments before word wrapping. The built-in Helvetica font keeps
+the renderer independent of web fonts; characters outside its Latin-1 range
+are replaced rather than crashing the run.
+
+Temporary filenames are derived from a SHA-256 digest of the opaque Gradio
+thread identifier, so names, companies, and roles do not appear in filesystem
+paths. A later tailoring run in the same session replaces the previous file.
+`Start over` and `Upload a different resume` delete the current PDF through the
+same operating-system temporary-directory boundary used for uploaded CVs.
+Unexpected process termination may leave a draft in the operating-system
+temporary directory, which should be included in normal temporary-file cleanup.
+
+PDF rendering follows a degradation contract: failure to create the file never
+discards a valid text application. The copyable cover letter, source-linked
+suggestions, validation report, and honesty note remain visible, while the UI
+shows a non-technical local-rendering error and hides the download action.
 
 ### July 2026 development-dependency security update
 

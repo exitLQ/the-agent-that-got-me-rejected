@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from types import SimpleNamespace
 
 import job_scout.app as app
@@ -163,7 +164,7 @@ def test_tailoring_requires_confirmation_before_validation_or_model_call(
     assert len(events) == 1
     assert events[0][0]["visible"] is True
     assert events[0][1]["visible"] is False
-    assert "Confirm this specific tailoring run" in events[0][6]
+    assert "Confirm this specific tailoring run" in events[0][9]
 
 
 def test_search_does_not_preselect_tailoring_job(monkeypatch, sample_profile):
@@ -213,7 +214,7 @@ def test_unknown_job_is_rejected_before_model_validation(monkeypatch, sample_pro
     )
 
     assert len(events) == 1
-    assert "no longer available" in events[0][6]
+    assert "no longer available" in events[0][9]
 
 
 def test_missing_corpus_is_rejected_before_model_validation(monkeypatch, sample_profile):
@@ -235,7 +236,7 @@ def test_missing_corpus_is_rejected_before_model_validation(monkeypatch, sample_
     )
 
     assert len(events) == 1
-    assert "temporary CV corpus is unavailable" in events[0][6]
+    assert "temporary CV corpus is unavailable" in events[0][9]
 
 
 def test_blocked_tailoring_model_never_starts_runner(monkeypatch, sample_profile):
@@ -267,7 +268,7 @@ def test_blocked_tailoring_model_never_starts_runner(monkeypatch, sample_profile
     )
 
     assert len(events) == 1
-    assert "Tailoring model is not ready: blocked" in events[0][6]
+    assert "Tailoring model is not ready: blocked" in events[0][9]
 
 
 def test_confirmed_tailoring_streams_result_with_explicit_session_data(
@@ -288,6 +289,11 @@ def test_confirmed_tailoring_streams_result_with_explicit_session_data(
         app,
         "validate_model_configuration",
         lambda model: captured.setdefault("validated_model", model),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_application_pdf",
+        lambda *args, **kwargs: Path("application-review.pdf"),
     )
 
     def fake_stream(profile, ranked_jobs, corpus, **kwargs):
@@ -316,8 +322,12 @@ def test_confirmed_tailoring_streams_result_with_explicit_session_data(
     assert final[1]["visible"] is True
     assert "require review" in final[2]
     assert final[3] == _pack().cover_letter
-    assert "validator warnings: 1" in final[4]
-    assert final[5] is result
+    assert final[4]["visible"] is True
+    assert final[4]["value"] == "application-review.pdf"
+    assert final[5] == ""
+    assert "validator warnings: 1" in final[6]
+    assert final[7] is result
+    assert final[8] == "application-review.pdf"
     assert captured["validated_model"] == "ollama:qwen3:8b"
     assert captured["profile"] == sample_profile
     assert captured["ranked_jobs"][0].job.job_id == "job-1"
@@ -346,9 +356,72 @@ def test_reset_clears_tailoring_state_and_creates_fresh_thread():
     first = app.reset()
     second = app.reset()
 
-    assert len(first) == 21
+    assert len(first) == 24
     assert first[3]["visible"] is False
     assert first[13]["choices"] == []
     assert first[14] is False
-    assert first[16:20] == ("", "", "", None)
-    assert first[20] != second[20]
+    assert first[16:18] == ("", "")
+    assert first[18]["visible"] is False
+    assert first[19:23] == ("", "", None, None)
+    assert first[23] != second[23]
+
+
+def test_reset_deletes_the_current_transient_pdf(monkeypatch):
+    deleted = []
+    monkeypatch.setattr(
+        app,
+        "delete_temporary_upload",
+        lambda path: deleted.append(path) or True,
+    )
+
+    reset_values = app.reset("temporary-application.pdf")
+
+    assert deleted == ["temporary-application.pdf"]
+    assert reset_values[18]["visible"] is False
+    assert reset_values[22] is None
+
+
+def test_pdf_failure_does_not_discard_application_text(
+    monkeypatch,
+    sample_profile,
+):
+    result = _result()
+    monkeypatch.setattr(
+        app,
+        "get_settings",
+        lambda: SimpleNamespace(
+            scout_tailor_model="ollama:qwen3:8b",
+            has_opik=False,
+        ),
+    )
+    monkeypatch.setattr(app, "validate_model_configuration", lambda model: None)
+    monkeypatch.setattr(
+        app,
+        "stream_tailoring",
+        lambda *args, **kwargs: iter([("result", result)]),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_application_pdf",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            app.ApplicationPdfError("render failed")
+        ),
+    )
+
+    final = list(
+        app.on_tailor(
+            sample_profile,
+            [_ranked()],
+            _corpus(),
+            "job-1",
+            True,
+            "thread-1",
+        )
+    )[-1]
+
+    assert final[1]["visible"] is True
+    assert final[3] == _pack().cover_letter
+    assert final[4]["visible"] is False
+    assert "PDF could not be created" in final[5]
+    assert final[7] is result
+    assert final[8] is None

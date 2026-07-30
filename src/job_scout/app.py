@@ -36,6 +36,7 @@ from job_scout.llm import (
 )
 from job_scout.privacy import delete_temporary_upload
 from job_scout.profile import extract_profile
+from job_scout.renderer import ApplicationPdfError, render_application_pdf
 from job_scout.runner import (
     RunResult,
     TailoringResult,
@@ -1028,11 +1029,12 @@ def on_tailor(
     selected_job_id: str | None,
     confirmed: bool,
     thread_id: str,
+    previous_pdf_path: str | None = None,
 ):
     """Step 3 → 4 after explicit selection and one-run data-transfer consent."""
     stay = gr.update(visible=True), gr.update(visible=False)
     go = gr.update(visible=False), gr.update(visible=True)
-    unchanged = (gr.update(), gr.update(), gr.update(), gr.update())
+    unchanged = tuple(gr.update() for _ in range(7))
 
     if not selected_job_id:
         yield (*stay, *unchanged, _status("Select one job before tailoring.", error=True))
@@ -1091,11 +1093,16 @@ def on_tailor(
         )
         return
 
+    if previous_pdf_path:
+        delete_temporary_upload(previous_pdf_path)
     yield (
         *go,
         _loading_html("Preparing the application draft…"),
         "",
+        gr.update(value=None, visible=False),
         "",
+        "",
+        None,
         None,
         "",
     )
@@ -1117,7 +1124,10 @@ def on_tailor(
                 *go,
                 _loading_html(str(payload)),
                 "",
+                gr.update(value=None, visible=False),
                 "",
+                "",
+                None,
                 None,
                 "",
             )
@@ -1125,12 +1135,38 @@ def on_tailor(
             result = payload  # type: ignore[assignment]
 
     cover_letter = result.tailoring.cover_letter if result.tailoring else ""
+    pdf_path: str | None = None
+    pdf_download = gr.update(value=None, visible=False)
+    pdf_status = ""
+    if result.tailoring is not None:
+        selected_job = next(
+            item for item in parsed_jobs if item.job.job_id == selected_job_id
+        )
+        try:
+            rendered_path = render_application_pdf(
+                parsed_profile,
+                selected_job,
+                parsed_corpus,
+                result,
+                thread_id=thread_id,
+            )
+            pdf_path = str(rendered_path)
+            pdf_download = gr.update(value=pdf_path, visible=True)
+        except ApplicationPdfError:
+            pdf_status = _status(
+                "The application text is ready, but the local PDF could not be created. "
+                "You can still copy the cover letter and review the source-linked suggestions.",
+                error=True,
+            )
     yield (
         *go,
         _tailoring_html(result, parsed_corpus),
         cover_letter,
+        pdf_download,
+        pdf_status,
         _tailor_footer_html(result),
         result,
+        pdf_path,
         "",
     )
 
@@ -1150,12 +1186,14 @@ def back_to_jobs():
     )
 
 
-def reset():
+def reset(application_pdf_path: str | None = None):
     """Return to step 1 and clear the wizard.
 
     Outputs include all four pages, cleared content, a fresh thread, and
     temporary session state.
     """
+    if application_pdf_path:
+        delete_temporary_upload(application_pdf_path)
     return (
         gr.update(visible=True),
         gr.update(visible=False),
@@ -1175,7 +1213,10 @@ def reset():
         "",
         "",
         "",
+        gr.update(value=None, visible=False),
         "",
+        "",
+        None,
         None,
         str(uuid4()),
     )
@@ -1198,6 +1239,7 @@ def build_app() -> gr.Blocks:
         ranked_jobs_state = gr.State([])
         corpus_state = gr.State([])
         tailoring_result_state = gr.State(None)
+        application_pdf_state = gr.State(None)
 
         gr.HTML(
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>the-agent-that-got-me-rejected</h1></div>'
@@ -1311,6 +1353,13 @@ def build_app() -> gr.Blocks:
                 interactive=False,
                 buttons=["copy"],
             )
+            application_pdf_out = gr.DownloadButton(
+                label="Download application review PDF",
+                value=None,
+                visible=False,
+                variant="primary",
+            )
+            application_pdf_status = gr.HTML()
             tailor_footer = gr.HTML()
             back_btn = gr.Button("Back to jobs", variant="secondary")
             restart_btn_tailor = gr.Button("Start over", variant="secondary")
@@ -1365,14 +1414,18 @@ def build_app() -> gr.Blocks:
                 tailor_job_input,
                 tailor_consent_input,
                 thread_id,
+                application_pdf_state,
             ],
             outputs=[
                 page_results,
                 page_tailor,
                 tailor_out,
                 cover_letter_out,
+                application_pdf_out,
+                application_pdf_status,
                 tailor_footer,
                 tailoring_result_state,
+                application_pdf_state,
                 tailor_status,
             ],
         )
@@ -1447,13 +1500,20 @@ def build_app() -> gr.Blocks:
             tailor_status,
             tailor_out,
             cover_letter_out,
+            application_pdf_out,
+            application_pdf_status,
             tailor_footer,
             tailoring_result_state,
+            application_pdf_state,
             thread_id,
         ]
-        change_btn.click(reset, outputs=reset_outputs)
-        restart_btn.click(reset, outputs=reset_outputs)
-        restart_btn_tailor.click(reset, outputs=reset_outputs)
+        change_btn.click(reset, inputs=[application_pdf_state], outputs=reset_outputs)
+        restart_btn.click(reset, inputs=[application_pdf_state], outputs=reset_outputs)
+        restart_btn_tailor.click(
+            reset,
+            inputs=[application_pdf_state],
+            outputs=reset_outputs,
+        )
 
     return demo
 

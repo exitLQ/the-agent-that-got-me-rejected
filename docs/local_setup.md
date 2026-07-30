@@ -365,9 +365,34 @@ The fourth page shows a copyable cover letter, addressed requirements, CV
 rewrite suggestions, exact cited CV statements, selected skills, an honesty
 note, and the complete deterministic warning report. A zero-warning report is
 not proof that every statement is true. Read the draft and its evidence before
-using it. `Back to jobs` keeps the search results but requires a new
-confirmation. `Start over` clears all temporary candidate and draft state but
-does not delete saved application-tracker records.
+using it.
+
+When local PDF rendering succeeds, use `Download application review PDF` to
+save a copy. The PDF includes the cover letter, tailored CV draft, exact source
+evidence, honesty note, and every validation warning. It is explicitly labeled
+as a review draft and is never submitted automatically. The renderer uses
+`fpdf2` locally and performs no network call.
+
+If PDF rendering fails, the text application remains available and copyable;
+the download action stays hidden and the page reports that only the local PDF
+could not be created. This can happen when the operating-system temporary
+directory is unavailable or not writable. Restore access to the temporary
+directory and prepare the application again.
+
+The current PDF uses built-in Helvetica for an offline-safe result. Latin-1
+names and text, including common Western European characters, are preserved.
+Characters outside that range are replaced in the PDF only; the complete
+Unicode text remains visible in the browser. Very long tokens are split into
+bounded segments and wrap instead of breaking the renderer.
+
+The generated file is transient and has a PII-free hashed filename under the
+operating-system temporary directory. A later tailoring run replaces the
+session's previous PDF. `Back to jobs` keeps the current search but requires a
+new confirmation. `Start over` and `Upload a different resume` delete the
+current PDF and clear all temporary candidate and draft state but do not delete
+saved application-tracker records. If the process terminates unexpectedly,
+remove residual drafts through the operating system's normal temporary-file
+cleanup.
 
 ### Ranking concurrency
 
