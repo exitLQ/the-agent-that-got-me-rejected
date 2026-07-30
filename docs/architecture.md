@@ -1,12 +1,8 @@
 # the-agent-that-got-me-rejected architecture
 
-![the-agent-that-got-me-rejected architecture](images/architecture.png)
-
 Grounded in the current code (`src/job_scout/…`). Renders anywhere Mermaid is
 supported (GitHub, most blog engines). Legend: **solid arrows** = data flow,
 **dotted arrows** = cross-cutting concerns (LLM calls, Opik tracing, config).
-
-The diagram above is also available as editable Mermaid source:
 
 ```mermaid
 flowchart TB
@@ -23,20 +19,24 @@ flowchart TB
   EP -->|"Profile"| RUN
 
   subgraph ORCH["runner.py · orchestrator (UI + batch share it)"]
-    RUN["stream_search / run_once<br/>measures cost + latency · streams node status"]
+    RUN["stream_search / stream_tailoring / run_once<br/>measures cost + latency · streams node status"]
   end
 
-  RUN -->|"Profile + session model"| G
+  RUN -->|"explicit current-run inputs"| G
 
   subgraph G["LangGraph agent · graph.py (MemorySaver checkpoint)"]
     direction TB
-    S((START)) --> FJ
+    S((START)) --> ENTRY{"selected_job_id<br/>present?"}
+    ENTRY -->|"no"| FJ
+    ENTRY -->|"yes"| TA["tailor<br/>strict TailoringPack<br/>dedicated model"]
     FJ["fetch_jobs<br/>LLM picks search args via tool call"] --> RJ
     RJ["rank_jobs<br/>5-job batches · bounded concurrent workers<br/>deterministic aggregation · hybrid score"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
     D -->|"no · under 2 loops"| RQ["reformulate_query<br/>quality feedback · validation · history<br/>deterministic fallback when needed"]
     RQ --> FJ
     D -->|"yes · or cap hit"| E((END))
+    TA --> E
   end
+  COR -. "AgentContext<br/>runtime only" .-> TA
 
   FJ -->|"query · country · remote"| SRCH
   subgraph SRCH["run_search · jobs_api.py"]
@@ -60,6 +60,7 @@ flowchart TB
   FJ -. "LLM" .-> OA
   RJ -. "LLM" .-> OA
   RQ -. "LLM" .-> OA
+  TA -. "LLM" .-> OA
 
   subgraph OBS["Opik observability · tracing.py"]
     TR["track_langgraph + OpikTracer<br/>span tree · agent graph · per-run cost"]
@@ -78,7 +79,7 @@ flowchart TB
   classDef node fill:#fff7e6,stroke:#b06000,color:#111;
   class OA,LLM_L llm;
   class TR,PL,AT,OBS obs;
-  class FJ,RJ,RQ node;
+  class FJ,RJ,RQ,TA node;
 ```
 
 ## Reading it
@@ -91,7 +92,9 @@ flowchart TB
    structured-output LLM call before the graph, so it is extracted once. In
    privacy mode the temporary UI upload is deleted after reading, and raw text
    is not stored in Gradio state or passed into LangGraph.
-2. **The agent graph.** `runner.py` feeds the profile into the LangGraph:
+2. **The agent graph.** `runner.py` supplies explicit current-run inputs to
+   LangGraph. The entry router starts at `tailor` only for a non-empty
+   `selected_job_id`; otherwise it starts at `fetch_jobs`. Search then runs
    `fetch_jobs` (the LLM chooses the search arguments) → `rank_jobs` (batched
    model assessment plus deterministic skill, role, seniority, and location
    components) → a conditional edge that either loops through
@@ -144,11 +147,17 @@ flowchart TB
    Unknown fields and normalized duplicates are rejected. These are structural
    guarantees only: the later validator must still resolve references against
    the session corpus and compare requirements with the selected job.
-10. **Isolated tailoring node.** `tailor_application` validates the selected job,
+10. **Tailoring node.** `tailor_application` validates the selected job,
     profile, session corpus, and call budget before invoking the dedicated
     tailoring model. `AgentContext` carries the corpus as a run dependency so it
     never becomes checkpointed `AgentState`. The safety contract is a system
     message; bounded JSON job, profile, and corpus data are supplied separately
     as untrusted content. The node returns a strict `TailoringPack` or a bounded
-    error and rejects packs for another job. It is not connected to the active
-    graph until the entry-routing and runner work is completed.
+    error and rejects packs for another job.
+11. **Entry isolation.** Search explicitly passes `selected_job_id=None` and
+    `tailoring=None`, while `stream_tailoring` explicitly passes the current
+    profile, ranked jobs, and selection. The latter carries the temporary corpus
+    and dedicated model only through `AgentContext`. Consequently a checkpoint
+    cannot silently select a job, retain an older draft, or persist the corpus.
+    The Gradio UI does not call this branch until the later explicit-selection
+    step is implemented.

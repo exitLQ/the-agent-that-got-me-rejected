@@ -197,6 +197,43 @@ supports a generated claim. The deterministic validator in step five will
 provide that decision, so the current node remains unreachable from the
 application.
 
+### Version 0.4.0 development: entry router and tailoring runner
+
+The fourth application-tailoring step connects the isolated node to the shared
+LangGraph through a conditional entry router. The route is decided only from
+the input supplied for the current invocation:
+
+- an explicit, non-empty `selected_job_id` starts at `tailor`;
+- a missing or null selection starts at `fetch_jobs`; and
+- both branches end without crossing into the other workflow.
+
+This keeps the existing search behavior unchanged. Every search run explicitly
+writes `selected_job_id=None` and `tailoring=None`, so a reused thread cannot
+accidentally enter tailoring or expose an older draft. The profile and selected
+model are also passed for the current run rather than recovered implicitly from
+a checkpoint.
+
+The new `stream_tailoring` runner is a separate orchestration entry point. Its
+caller must supply the current structured profile, ranked-job list, selected
+job identifier, temporary corpus, thread identifier, and optional tailoring
+model. The profile, ranked jobs, and selection become explicit graph inputs.
+The corpus and dedicated model travel in run-scoped `AgentContext`; they are not
+graph state, configurable checkpoint data, application-tracker data, or trace
+metadata. This preserves the temporary evidence boundary established in the
+first development step.
+
+Tailoring uses `SCOUT_TAILOR_MODEL` unless a session-specific tailoring model is
+provided. The runner reports node progress, latency, supported cost estimates,
+bounded graph failures, and the final typed `TailoringPack`. It reuses the
+current trace thread with a `tailor` tag, but does not attach the CV or place
+corpus contents in trace metadata.
+
+The Gradio interface still exposes only the existing search workflow at this
+stage. The connected tailoring route is an internal, tested capability; no job
+text is sent for tailoring until a later wizard step obtains an explicit user
+selection. The deterministic fabrication validator remains the next required
+gate before any generated application material is displayed.
+
 ### July 2026 development-dependency security update
 
 The locked development environment now requires JupyterLab `4.6.2` or newer
@@ -1625,6 +1662,10 @@ CV PDF
 Profile extraction
   |
   v
+Explicit job selected? -- yes --> Tailor application --> Tailoring result
+  |
+  no
+  v
 Fetch jobs -> Rank jobs -> Enough strong matches?
      ^                         |
      |                         | no, below loop limit
@@ -1639,7 +1680,9 @@ offline mode, search reads only cached data. With offline mode disabled, the
 live adapters run before the cache fallback. A deterministic location gate
 orders eligible results and removes known geographical mismatches before
 ranking runs in batches. The graph can broaden a weak search up to a fixed
-limit.
+limit. A separate runner can enter the tailoring branch only with an explicit
+job selection and supplies the temporary corpus as non-checkpointed runtime
+context.
 
 See [Architecture](docs/architecture.md) for the detailed graph.
 

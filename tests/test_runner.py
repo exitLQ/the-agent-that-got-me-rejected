@@ -9,7 +9,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import job_scout.runner as runner_mod
-from job_scout.runner import run_once, stream_search
+from job_scout.corpus import CorpusItem
+from job_scout.graph.schemas import JobPosting, RankedJob, TailoringPack
+from job_scout.graph.state import AgentContext
+from job_scout.runner import run_once, stream_search, stream_tailoring
 
 
 class _FakeGraph:
@@ -50,6 +53,7 @@ def test_search_passes_profile_and_nulls_selected_job_id(monkeypatch, sample_pro
 
     assert fake.captured_inputs["profile"] is sample_profile
     assert fake.captured_inputs["selected_job_id"] is None
+    assert fake.captured_inputs["tailoring"] is None
     assert "cv_text" not in fake.captured_inputs
 
 
@@ -75,3 +79,104 @@ def test_stream_search_yields_result(monkeypatch, sample_profile):
     assert result.ranking_workers == 2
     assert result.ranking_latency_s == 0.75
     assert result.failed is False
+
+
+def _ranked_job() -> RankedJob:
+    return RankedJob(
+        job=JobPosting(
+            job_id="job-1",
+            title="Data Scientist",
+            company="Example",
+            location="Berlin",
+            description="Build Python models.",
+            source="cache",
+        ),
+        fit_score=85,
+        fit_explanation="Strong match.",
+    )
+
+
+def _tailoring_pack() -> TailoringPack:
+    return TailoringPack(
+        selected_job_id="job-1",
+        cover_letter=(
+            "I am applying for this data science role because my Python "
+            "experience supports the modelling work described in the posting."
+        ),
+        addressed_requirements=["Python", "Predictive modelling"],
+        tailored_bullets=[
+            {
+                "text": "Built Python models for production analytics workflows.",
+                "corpus_refs": ["cv-experience-001"],
+                "reason": "The rewrite stays within the cited experience.",
+            }
+        ],
+        selected_skills=[
+            {"name": "Python", "corpus_ref": "cv-skill-001"},
+        ],
+        honesty_note="The CV does not evidence every tool requested by the employer.",
+    )
+
+
+class _FakeTailoringGraph:
+    def __init__(self, pack):
+        self.pack = pack
+        self.captured_inputs = None
+        self.captured_config = None
+        self.captured_context = None
+
+    def stream(self, inputs, config, context, stream_mode):
+        self.captured_inputs = inputs
+        self.captured_config = config
+        self.captured_context = context
+        return iter([{"tailor": {"tailoring": self.pack, "errors": []}}])
+
+    def get_state(self, config):
+        return SimpleNamespace(values={"tailoring": self.pack, "errors": []})
+
+
+def test_tailoring_runner_passes_explicit_state_and_runtime_only_corpus(
+    monkeypatch,
+    sample_profile,
+):
+    pack = _tailoring_pack()
+    fake = _FakeTailoringGraph(pack)
+    _patch(monkeypatch, fake)
+    corpus = [
+        CorpusItem(
+            item_id="cv-experience-001",
+            text="Built Python models for production analytics workflows.",
+            kind="experience",
+        ),
+        CorpusItem(item_id="cv-skill-001", text="Python", kind="skill"),
+    ]
+
+    events = list(
+        stream_tailoring(
+            sample_profile,
+            [_ranked_job()],
+            corpus,
+            selected_job_id="job-1",
+            thread_id="t1",
+            tags=["ui"],
+            model_name="ollama:tailor-test",
+        )
+    )
+
+    assert events[0] == ("status", "application draft prepared")
+    assert events[-1][0] == "result"
+    result = events[-1][1]
+    assert result.tailoring == pack
+    assert result.model == "ollama:tailor-test"
+    assert result.failed is False
+
+    assert fake.captured_inputs["profile"] is sample_profile
+    assert fake.captured_inputs["ranked_jobs"][0].job.job_id == "job-1"
+    assert fake.captured_inputs["selected_job_id"] == "job-1"
+    assert fake.captured_inputs["tailoring"] is None
+    assert "candidate_corpus" not in fake.captured_inputs
+    assert "candidate_corpus" not in fake.captured_config
+    assert fake.captured_context == AgentContext(
+        candidate_corpus=tuple(corpus),
+        tailor_model="ollama:tailor-test",
+    )

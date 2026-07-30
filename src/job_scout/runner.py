@@ -14,8 +14,15 @@ from dataclasses import dataclass, field
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 from job_scout.config import get_settings
+from job_scout.corpus import CorpusItem
 from job_scout.graph.graph import build_graph
-from job_scout.graph.schemas import Profile, QueryReformulation, RankedJob
+from job_scout.graph.schemas import (
+    Profile,
+    QueryReformulation,
+    RankedJob,
+    TailoringPack,
+)
+from job_scout.graph.state import AgentContext
 from job_scout.profile import extract_profile
 from job_scout.tracing import attach_cv, get_tracer, opik_url, trace_graph
 
@@ -29,6 +36,7 @@ _NODE_STATUS = {
     "fetch_jobs": "searching jobs…",
     "rank_jobs": "ranking jobs…",
     "reformulate_query": "broadening the search…",
+    "tailor": "preparing application draft…",
 }
 
 
@@ -58,6 +66,22 @@ class RunResult:
     error_message: str = ""
 
 
+@dataclass
+class TailoringResult:
+    """The outcome of one explicit tailoring run."""
+
+    selected_job_id: str = ""
+    model: str = ""
+    tailoring: TailoringPack | None = None
+    errors: list[str] = field(default_factory=list)
+    cost_usd: float = 0.0
+    cost_estimate_available: bool = False
+    latency_s: float = 0.0
+    opik_url: str = ""
+    failed: bool = False
+    error_message: str = ""
+
+
 def _estimate_cost(usage: dict, model: str) -> float:
     """Estimate USD cost from token usage, for the footer (Opik has the exact figure)."""
     in_price, out_price = _PRICES_PER_MTOK.get(model.split(":", 1)[-1], (0.0, 0.0))
@@ -75,14 +99,13 @@ def stream_search(
     cv_path: str | None = None,
     thread_id: str,
     tags: list[str],
-    selected_job_id: str | None = None,
     model_name: str | None = None,
 ) -> Iterator[tuple[str, object]]:
     """Run the job-finding graph for an already-extracted profile.
 
     Yields ``("status", msg)`` per node and finally ``("result", RunResult)``.
-    ``selected_job_id`` is passed explicitly on every invocation (default ``None``)
-    so a run never routes into stale Phase 2 tailoring on a reused thread.
+    Search explicitly writes ``selected_job_id=None`` and ``tailoring=None`` so
+    reused checkpoint state can never route into or retain stale tailoring.
     """
     settings = get_settings()
     selected_model = model_name or settings.scout_model
@@ -95,7 +118,12 @@ def stream_search(
     graph = trace_graph(build_graph(), tracer)
     # The graph needs only the structured profile. Raw resume text is kept out
     # of checkpoints, traces, and node inputs in every operating mode.
-    inputs = {"profile": profile, "selected_job_id": selected_job_id, "model": selected_model}
+    inputs = {
+        "profile": profile,
+        "selected_job_id": None,
+        "tailoring": None,
+        "model": selected_model,
+    }
     config = {"configurable": {"thread_id": thread_id}, "callbacks": callbacks, "recursion_limit": 25}
 
     result = RunResult(opik_url=opik_url(), profile=profile, model=selected_model)
@@ -134,6 +162,81 @@ def stream_search(
     yield ("result", result)
 
 
+def stream_tailoring(
+    profile: Profile,
+    ranked_jobs: list[RankedJob],
+    candidate_corpus: list[CorpusItem],
+    *,
+    selected_job_id: str,
+    thread_id: str,
+    tags: list[str],
+    model_name: str | None = None,
+) -> Iterator[tuple[str, object]]:
+    """Run only the tailoring branch with explicit, non-checkpointed evidence."""
+    settings = get_settings()
+    selected_model = model_name or settings.scout_tailor_model
+    tracer = get_tracer(
+        thread_id,
+        [*tags, "tailor"],
+        {
+            "model": selected_model,
+            "operation": "tailoring",
+            "selected_job_id": selected_job_id,
+        },
+    )
+    usage_cb = UsageMetadataCallbackHandler()
+    graph = trace_graph(build_graph(), tracer)
+    inputs = {
+        "profile": profile,
+        "ranked_jobs": ranked_jobs,
+        "selected_job_id": selected_job_id,
+        "tailoring": None,
+        "errors": [],
+        "llm_calls": 0,
+    }
+    context = AgentContext(
+        candidate_corpus=tuple(candidate_corpus),
+        tailor_model=selected_model,
+    )
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "callbacks": [usage_cb],
+        "recursion_limit": 5,
+    }
+    result = TailoringResult(
+        selected_job_id=selected_job_id,
+        model=selected_model,
+        opik_url=opik_url(),
+    )
+    start = time.monotonic()
+    try:
+        for chunk in graph.stream(
+            inputs,
+            config=config,
+            context=context,
+            stream_mode="updates",
+        ):
+            for node_name, update in chunk.items():
+                yield ("status", _status_line(node_name, update))
+
+        final = graph.get_state(config).values
+        result.tailoring = final.get("tailoring")
+        result.errors = final.get("errors", [])
+    except Exception as exc:  # noqa: BLE001 - return one stable runner result
+        result.failed = True
+        result.error_message = f"{type(exc).__name__}: {exc}"
+    finally:
+        result.latency_s = round(time.monotonic() - start, 2)
+        result.cost_estimate_available = (
+            selected_model.split(":", 1)[-1] in _PRICES_PER_MTOK
+        )
+        result.cost_usd = _estimate_cost(usage_cb.usage_metadata, selected_model)
+        if tracer:
+            tracer.flush()
+
+    yield ("result", result)
+
+
 def _status_line(node_name: str, update: dict) -> str:
     """Human-readable progress line for a completed node."""
     if node_name == "fetch_jobs":
@@ -143,6 +246,12 @@ def _status_line(node_name: str, update: dict) -> str:
         return f"ranking {len(update.get('ranked_jobs', []))} jobs…"
     if node_name == "reformulate_query":
         return f"broadened query to: {update.get('search_query', 'fallback query')}"
+    if node_name == "tailor":
+        return (
+            "application draft prepared"
+            if update.get("tailoring")
+            else "application draft could not be prepared"
+        )
     return _NODE_STATUS.get(node_name, f"{node_name}…")
 
 
