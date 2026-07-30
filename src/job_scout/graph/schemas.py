@@ -1,16 +1,16 @@
 """Pydantic models used across the agent graph.
 
 These are the structured-output targets for the LLM/tool calls and the shared
-data contracts the nodes read and write. Phase 2 models (``EmphasisItem``,
-``TailoringPack``) are defined here already so the state (and therefore the
-checkpoint format) is stable across phases.
+data contracts the nodes read and write. Application-tailoring models use
+strict fields and mandatory corpus references so later generation is
+mechanically checkable.
 """
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Seniority = Literal["junior", "mid", "senior", "lead", "unknown"]
 JobSourceName = Literal["jsearch", "adzuna", "remotive", "cache"]
@@ -105,17 +105,67 @@ class RankedJob(BaseModel):
     gap_evidence: list[SkillEvidence] = Field(default_factory=list)
 
 
-class EmphasisItem(BaseModel):
-    """A CV bullet to promote or reword for a specific posting (Phase 2)."""
+CorpusReference = Annotated[
+    str,
+    Field(pattern=r"^cv-(?:experience|skill|education|summary)-\d{3}$"),
+]
+RequirementText = Annotated[str, Field(min_length=3, max_length=300)]
 
-    original_bullet: str
-    suggested_rewrite: str
-    reason: str
+
+class _StrictTailoringModel(BaseModel):
+    """Shared strictness for model-generated application material."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
-class TailoringPack(BaseModel):
-    """Application material generated for a selected job (Phase 2)."""
+class TailoredBullet(_StrictTailoringModel):
+    """One rewritten CV bullet with mandatory addressable evidence."""
 
-    cover_letter: str
-    cv_emphasis: list[EmphasisItem] = Field(default_factory=list)
-    honesty_note: str = ""
+    text: str = Field(min_length=10, max_length=500)
+    corpus_refs: list[CorpusReference] = Field(min_length=1, max_length=3)
+    reason: str = Field(min_length=5, max_length=500)
+
+    @field_validator("corpus_refs")
+    @classmethod
+    def _require_unique_references(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("corpus_refs must not contain duplicates")
+        return value
+
+
+class TailoredSkill(_StrictTailoringModel):
+    """One CV skill retained for the selected role and grounded in the corpus."""
+
+    name: str = Field(min_length=2, max_length=100)
+    corpus_ref: CorpusReference
+
+
+class TailoringPack(_StrictTailoringModel):
+    """Strict, source-linked application material for one selected job."""
+
+    selected_job_id: str = Field(min_length=1, max_length=300)
+    cover_letter: str = Field(min_length=50, max_length=5000)
+    addressed_requirements: list[RequirementText] = Field(min_length=2, max_length=8)
+    tailored_bullets: list[TailoredBullet] = Field(min_length=1, max_length=12)
+    selected_skills: list[TailoredSkill] = Field(default_factory=list, max_length=30)
+    honesty_note: str = Field(min_length=10, max_length=1500)
+
+    @field_validator("addressed_requirements")
+    @classmethod
+    def _require_distinct_requirements(cls, value: list[str]) -> list[str]:
+        normalized = [" ".join(item.casefold().split()) for item in value]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("addressed_requirements must be distinct")
+        return value
+
+    @model_validator(mode="after")
+    def _enforce_pack_contract(self) -> TailoringPack:
+        if len(self.cover_letter.split()) > 350:
+            raise ValueError("cover_letter must contain at most 350 words")
+        bullet_text = [" ".join(item.text.casefold().split()) for item in self.tailored_bullets]
+        if len(bullet_text) != len(set(bullet_text)):
+            raise ValueError("tailored_bullets must not contain duplicate text")
+        skill_names = [" ".join(item.name.casefold().split()) for item in self.selected_skills]
+        if len(skill_names) != len(set(skill_names)):
+            raise ValueError("selected_skills must not contain duplicate names")
+        return self

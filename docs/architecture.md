@@ -136,3 +136,11 @@ flowchart TB
    items enter Gradio session state. The corpus is not placed in LangGraph,
    SQLite, traces, or logs. It is cleared by `Start over` and will provide the
    addressable evidence contract for the later tailoring and validation nodes.
+9. **Strict tailoring contracts.** `TailoredBullet`, `TailoredSkill`, and
+   `TailoringPack` define the only accepted shape for future generated
+   application material. Bullets and skills require syntactically valid corpus
+   references; the pack requires a selected job, at least two distinct
+   requirements, an honesty note, and a cover letter capped at 350 words.
+   Unknown fields and normalized duplicates are rejected. These are structural
+   guarantees only: the later validator must still resolve references against
+   the session corpus and compare requirements with the selected job.

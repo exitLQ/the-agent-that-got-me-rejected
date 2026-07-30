@@ -114,6 +114,41 @@ steps will require generated claims to reference these item identifiers. The
 separation keeps the parsing and privacy boundary independently testable before
 any model receives corpus content.
 
+### Version 0.4.0 development: strict tailoring contracts
+
+The second application-tailoring foundation defines the exact structured output
+that a later model call must produce. Unknown fields are rejected instead of
+being silently accepted, and surrounding string whitespace is normalized.
+
+Every rewritten CV bullet must contain:
+
+- a rewrite between 10 and 500 characters;
+- one to three corpus references using the exact `cv-<kind>-<number>` format;
+- a short explanation of why the source supports the rewrite; and
+- no duplicate reference within the same bullet.
+
+Selected skills are represented separately and each requires one skill,
+experience, education, or summary corpus reference. The complete tailoring pack
+is tied to one selected job identifier and requires:
+
+- a cover letter between 50 and 5,000 characters and no more than 350 words;
+- two to eight distinct job requirements addressed by the letter;
+- one to twelve source-linked CV bullets;
+- up to 30 individually source-linked skills; and
+- a mandatory honesty note describing evidence gaps or limitations.
+
+Duplicate bullet text, requirement descriptions, and skill names are rejected
+case-insensitively. These constraints turn common generation mistakes into
+immediate validation errors and give the later deterministic validator stable,
+typed inputs.
+
+Schema validation alone does not prove that a referenced corpus item exists or
+that a rewrite remains faithful to it. It also cannot decide whether an
+addressed requirement really appears in the selected job. Those contextual
+checks intentionally remain outside the data model and will be implemented by
+the deterministic fabrication validator. No tailoring model is called and no
+application material is exposed in the UI at this development step.
+
 ### Backup and reset
 
 Stop the application before copying the database for a consistent manual
