@@ -25,6 +25,7 @@ dist/
 
 # Batch/snapshot run logs (artifacts, not committed)
 reports/*.log
+reports/local_evaluation*.json
 
 # Local application tracker
 data/applications.db

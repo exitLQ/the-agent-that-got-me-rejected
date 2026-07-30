@@ -394,6 +394,43 @@ saved application-tracker records. If the process terminates unexpectedly,
 remove residual drafts through the operating system's normal temporary-file
 cleanup.
 
+### Running deterministic evaluation locally
+
+The local evaluator does not require Ollama, an API key, Opik, or network
+access. Run the synthetic fixture from the repository root:
+
+```powershell
+uv run python scripts/run_local_evals.py data/evaluation/local_fixture.json
+```
+
+The command prints profile field accuracy, fabrication rate, citation
+resolution, and cover-letter length compliance. It writes a
+privacy-minimized report to `reports/local_evaluation.json`. Reports matching
+`reports/local_evaluation*.json` are ignored by Git.
+
+To evaluate your own saved cases:
+
+```powershell
+uv run python scripts/run_local_evals.py C:\path\to\cases.json --output C:\path\to\report.json
+```
+
+Copy `data/evaluation/local_fixture.json` as the schema example. Use opaque
+case IDs that contain no names, email addresses, or company-confidential
+identifiers. Profile cases must use labels that you personally checked and set
+`human_verified` to `true`; the evaluator rejects any other value. Limit
+`fields` to the fields you actually verified. Free-form `raw_summary` text is
+never scored. Case IDs must be unique, and the command refuses to use the input
+file itself as the output path.
+
+Tailoring cases contain application text and corpus evidence, so keep input
+files local and out of Git. The output does not copy those texts, but it keeps
+the case ID, counts, rates, active thresholds, and warning categories. Delete
+input and report files according to your local data-retention requirements.
+
+The fixture's fixed 50 percent fabrication rate is intentional: its one
+tailoring case has two synthetic warnings among four checked claims. It is a
+regression test for metric calculation, not a model-quality baseline.
+
 ### Ranking concurrency
 
 Ranking uses batches of five jobs and up to two concurrent model requests by

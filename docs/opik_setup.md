@@ -59,5 +59,13 @@ models), and the CV attached to the trace.
 
 ## 5. Optional evaluation
 
-Evaluation rules and annotation workflows are not required for the local
-application. Add them only when an external observability workflow is needed.
+The repository's deterministic evaluator is local and does not require Opik:
+
+```bash
+uv run python scripts/run_local_evals.py data/evaluation/local_fixture.json
+```
+
+Opik datasets, evaluation rules, LLM judges, and annotation workflows are not
+required for the local application. Add them only when an external
+observability workflow is explicitly needed and its data-transfer boundary has
+been reviewed.

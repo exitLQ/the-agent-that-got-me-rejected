@@ -406,6 +406,79 @@ discards a valid text application. The copyable cover letter, source-linked
 suggestions, validation report, and honesty note remain visible, while the UI
 shows a non-technical local-rendering error and hides the download action.
 
+### Version 0.4.0 development: local deterministic evaluation
+
+The eighth application-tailoring step adds an offline evaluator for questions
+with mechanically verifiable answers. It deliberately does not score
+subjective writing quality, ask an LLM to judge another LLM, create an Opik
+dataset, or upload evaluation data.
+
+Run the committed synthetic fixture:
+
+```bash
+uv run python scripts/run_local_evals.py data/evaluation/local_fixture.json
+```
+
+The default report is `reports/local_evaluation.json`. Local evaluation reports
+are ignored by Git because real inputs and case identifiers may be private.
+Choose another output path with:
+
+```bash
+uv run python scripts/run_local_evals.py INPUT.json --output REPORT.json
+```
+
+The input has `schema_version: 1` and two independent case lists:
+
+- `profile_cases` contains an opaque, non-personal case ID, `expected` and
+  `actual` typed profiles, the fields to score, and
+  `human_verified: true`. The parser rejects `false` so model-drafted labels
+  cannot silently become ground truth.
+- `tailoring_cases` contains a strict `TailoringPack`, the exact temporary
+  corpus used for validation, and the selected job context. These are
+  mechanically evaluated and do not need subjective labels.
+
+Case IDs must be unique across both lists. The output path must differ from the
+input path, preventing an evaluation report from overwriting its source data.
+
+Profile field accuracy gives each selected typed field equal weight. Strings
+are compared after case-folding, trimming, and whitespace normalization. List
+order is ignored but list contents and duplicate counts must agree. Numeric,
+Boolean, and missing values must agree exactly after stable float
+normalization. The default fields are name, seniority, primary roles, skills,
+years of experience, locations, languages, and remote preference.
+`raw_summary` is excluded because free-form summary equivalence is not an exact
+mechanical question. A case can list a smaller field set when only some labels
+have been human-verified.
+
+Tailoring evaluation calls the same production `validate_pack` function used
+by the Gradio workflow. Its metrics are:
+
+- fabrication rate = validator flags divided by claims checked;
+- grounded-claim rate = one minus the fabrication rate;
+- citation-resolution rate = bullet and skill references found in the supplied
+  corpus divided by all such references; and
+- cover-letter length compliance = packs at or below the 350-word contract
+  divided by evaluated tailoring cases.
+
+Aggregate rates use summed numerators and denominators rather than averaging
+case percentages. A metric with no denominator is JSON `null`, never a
+misleading zero or 100 percent. Each tailoring result records the active
+validator thresholds and warning counts by claim type, so threshold changes
+remain visible.
+
+The report has a SHA-256 digest of the canonical parsed dataset and is
+byte-stable for identical data and settings. It contains aggregate counts,
+rates, user-supplied case identifiers, mismatched profile field names, word
+counts, thresholds, and warning counts. It does not copy expected or actual profile
+values, corpus statements, cover letters, tailored bullets, or warning text.
+Use opaque case identifiers because identifiers remain in the report for local
+case mapping.
+
+The included fixture is synthetic and intentionally contains two grounding
+warnings. Its scores verify the evaluator itself; they are not a quality claim
+about a real model or a production run. Subjective judges and external
+evaluation interfaces remain separate and optional.
+
 ### July 2026 development-dependency security update
 
 The locked development environment now requires JupyterLab `4.6.2` or newer

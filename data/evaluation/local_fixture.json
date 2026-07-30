@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "profile_cases": [
+    {
+      "case_id": "synthetic-profile-normalization",
+      "human_verified": true,
+      "expected": {
+        "name": "Test Candidate",
+        "seniority": "mid",
+        "primary_roles": [
+          "Data Engineer",
+          "Analytics Engineer"
+        ],
+        "skills": [
+          "Python",
+          "SQL"
+        ],
+        "years_experience": 3.0,
+        "locations": [
+          "Vienna, Austria"
+        ],
+        "languages": [
+          "English",
+          "German"
+        ],
+        "remote_ok": true,
+        "raw_summary": "Human-verified synthetic fixture."
+      },
+      "actual": {
+        "name": " test candidate ",
+        "seniority": "mid",
+        "primary_roles": [
+          "analytics engineer",
+          "data engineer"
+        ],
+        "skills": [
+          "sql",
+          "python"
+        ],
+        "years_experience": 3,
+        "locations": [
+          "vienna, austria"
+        ],
+        "languages": [
+          "german",
+          "english"
+        ],
+        "remote_ok": true,
+        "raw_summary": "Free-form summaries are deliberately not scored."
+      }
+    }
+  ],
+  "tailoring_cases": [
+    {
+      "case_id": "synthetic-grounding-warning",
+      "pack": {
+        "selected_job_id": "synthetic-job-1",
+        "cover_letter": "Dear hiring team,\nI would welcome the opportunity to contribute to your data team.\nKind regards",
+        "addressed_requirements": [
+          "Python",
+          "Reliable services"
+        ],
+        "tailored_bullets": [
+          {
+            "text": "Led a global Kubernetes migration that doubled annual revenue.",
+            "corpus_refs": [
+              "cv-experience-001"
+            ],
+            "reason": "This synthetic drift must be measured by the evaluator."
+          }
+        ],
+        "selected_skills": [
+          {
+            "name": "Kubernetes",
+            "corpus_ref": "cv-skill-001"
+          }
+        ],
+        "honesty_note": "The synthetic CV does not support the generated claims."
+      },
+      "corpus": [
+        {
+          "item_id": "cv-experience-001",
+          "text": "Built Python data services for analytics.",
+          "kind": "experience",
+          "source": "cv"
+        },
+        {
+          "item_id": "cv-skill-001",
+          "text": "Python",
+          "kind": "skill",
+          "source": "cv"
+        }
+      ],
+      "job_context": [
+        "Python",
+        "Reliable services"
+      ]
+    }
+  ]
+}

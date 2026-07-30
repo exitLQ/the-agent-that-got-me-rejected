@@ -55,6 +55,9 @@ flowchart TB
   RUN -->|"ranked cards or draft + evidence + all warnings"| UI
   UI -->|"validated local session models"| PDF["renderer.py<br/>fpdf2 application review PDF<br/>transient local file"]
   PDF -->|"explicit download only"| U
+  EVIN["versioned local evaluation JSON<br/>human-verified profile labels<br/>tailoring pack + evidence"] --> EVAL["evals/deterministic.py<br/>typed mechanical metrics<br/>no model or network"]
+  VAL -. "same validate_pack function" .-> EVAL
+  EVAL --> EVOUT["privacy-minimized local JSON report<br/>rates + counts + thresholds"]
   UI -->|"selected job + status + notes"| DB["applications.py<br/>local SQLite tracker"]
   DB -->|"saved application overview"| UI
 
@@ -191,3 +194,11 @@ flowchart TB
     rather than candidate data. Rendering performs no network or model call;
     reset deletes the current temporary file, and renderer failure leaves the
     text draft available.
+15. **Local deterministic evaluation.** A versioned JSON dataset can compare
+    typed actual profiles with explicitly human-verified expected fields and
+    can re-run the production fabrication validator on tailoring cases.
+    `evals/deterministic.py` computes field accuracy, fabrication and grounded
+    claim rates, citation resolution, and the cover-letter length contract
+    without a model, network, trace, or database. The stable report retains
+    only case IDs, field names, counts, rates, thresholds, and a dataset digest;
+    candidate and generated prose are not copied to it.
