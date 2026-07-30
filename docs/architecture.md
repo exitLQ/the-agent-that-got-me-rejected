@@ -144,3 +144,11 @@ flowchart TB
    Unknown fields and normalized duplicates are rejected. These are structural
    guarantees only: the later validator must still resolve references against
    the session corpus and compare requirements with the selected job.
+10. **Isolated tailoring node.** `tailor_application` validates the selected job,
+    profile, session corpus, and call budget before invoking the dedicated
+    tailoring model. `AgentContext` carries the corpus as a run dependency so it
+    never becomes checkpointed `AgentState`. The safety contract is a system
+    message; bounded JSON job, profile, and corpus data are supplied separately
+    as untrusted content. The node returns a strict `TailoringPack` or a bounded
+    error and rejects packs for another job. It is not connected to the active
+    graph until the entry-routing and runner work is completed.

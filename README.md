@@ -149,6 +149,54 @@ checks intentionally remain outside the data model and will be implemented by
 the deterministic fabrication validator. No tailoring model is called and no
 application material is exposed in the UI at this development step.
 
+### Version 0.4.0 development: isolated tailoring node
+
+The third application-tailoring step implements an isolated
+`tailor_application` graph node. It is intentionally not routed from the active
+search graph or exposed in Gradio yet. This allows its model, privacy, and error
+boundaries to be tested before a user-facing action can trigger it.
+
+Before creating a model client, the node requires:
+
+- one explicit `selected_job_id`;
+- a matching job in the current ranked results;
+- the structured candidate profile;
+- a non-empty temporary CV corpus in run-scoped `AgentContext`; and
+- one remaining call in the global LLM-call budget.
+
+The corpus is a runtime dependency rather than an `AgentState` field. It
+therefore does not enter LangGraph checkpoints or become part of the node's
+state update. The dedicated model comes from the run-scoped tailoring choice or
+falls back to `SCOUT_TAILOR_MODEL`; it does not silently reuse a search-model
+override.
+
+The model receives two messages. The system message contains the non-negotiable
+grounding and safety rules. A separate user message contains JSON representations
+of:
+
+- the profile without the candidate name, location preferences, or raw summary;
+- the selected job, with its description bounded to 6,000 characters; and
+- at most 120 typed corpus items from the current session.
+
+Keeping instructions separate from the untrusted job posting and corpus reduces
+prompt-injection risk. The node never reads application-tracker notes, API keys,
+contact details, the raw PDF, or the original unsegmented CV text. Registering
+the prompt with optional Opik uploads only the static template, not the runtime
+job or corpus values.
+
+The model call uses `TailoringPack` structured output at temperature zero. A
+pack that names a different job is rejected. Missing input and unknown job IDs
+return controlled errors without calling a model. Provider and schema failures
+are converted into bounded state errors, and an attempted provider call is
+counted even when it fails. This prevents a tailoring failure from crashing the
+future wizard while preserving budget accounting.
+
+Contextual fabrication checks are still pending. This node guarantees the
+strict output shape but does not yet prove that a cited corpus item exists or
+supports a generated claim. The deterministic validator in step five will
+provide that decision, so the current node remains unreachable from the
+application.
+
 ### July 2026 development-dependency security update
 
 The locked development environment now requires JupyterLab `4.6.2` or newer

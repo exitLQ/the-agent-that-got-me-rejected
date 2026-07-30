@@ -18,6 +18,7 @@ from typing import Any
 from job_scout.config import get_settings
 from job_scout.graph.prompts.rank_jobs import RANK_JOBS_PROMPT, RANK_JOBS_PROMPT_NAME
 from job_scout.graph.prompts.reformulate import REFORMULATE_PROMPT, REFORMULATE_PROMPT_NAME
+from job_scout.graph.prompts.tailor import TAILOR_PROMPT_NAME, TAILOR_PROMPT_TEMPLATE
 from job_scout.profile import EXTRACT_PROFILE_PROMPT, EXTRACT_PROFILE_PROMPT_NAME
 
 _CONFIGURED = False
@@ -124,6 +125,7 @@ _PROMPTS = [
     (EXTRACT_PROFILE_PROMPT_NAME, EXTRACT_PROFILE_PROMPT),
     (RANK_JOBS_PROMPT_NAME, RANK_JOBS_PROMPT),
     (REFORMULATE_PROMPT_NAME, REFORMULATE_PROMPT),
+    (TAILOR_PROMPT_NAME, TAILOR_PROMPT_TEMPLATE),
 ]
 
 

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TypedDict
 
+from job_scout.corpus import CorpusItem
 from job_scout.graph.schemas import (
     JobPosting,
     Profile,
@@ -11,6 +13,14 @@ from job_scout.graph.schemas import (
     RankedJob,
     TailoringPack,
 )
+
+
+@dataclass(frozen=True)
+class AgentContext:
+    """Run-scoped dependencies that must never enter checkpoints or graph state."""
+
+    candidate_corpus: tuple[CorpusItem, ...] = ()
+    tailor_model: str = ""
 
 
 class AgentState(TypedDict, total=False):
