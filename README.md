@@ -149,6 +149,33 @@ checks intentionally remain outside the data model and will be implemented by
 the deterministic fabrication validator. No tailoring model is called and no
 application material is exposed in the UI at this development step.
 
+### July 2026 development-dependency security update
+
+The locked development environment now requires JupyterLab `4.6.2` or newer
+and pytest `9.0.3` or newer. The resolved lock currently uses JupyterLab
+`4.6.2` and pytest `9.1.1`.
+
+JupyterLab `4.6.2` resolves the five Dependabot findings affecting `4.6.0` and
+`4.6.1`:
+
+- crafted `overrides.json` settings could execute code;
+- the image viewer could allow cross-site scripting and server-side code
+  execution;
+- package-name canonicalization could bypass an extension blocklist;
+- plugin lock rules could be bypassed through direct API requests; and
+- a missing `await` could skip a defense-in-depth extension allowlist check.
+
+Pytest `9.0.3` resolves CVE-2025-71176, in which predictable UNIX temporary
+directory handling could allow a local denial of service or possible privilege
+impact. The application runtime itself does not expose JupyterLab or pytest;
+both packages belong to the development environment. They are nevertheless
+kept patched because contributors, notebooks, and CI execute that environment.
+
+The security floors are declared in `pyproject.toml`, pinned by `uv.lock`, and
+covered by regression tests. The alerts must be resolved by dependency updates,
+not manually dismissed. GitHub may take several minutes after a push to rescan
+the lockfile and close the alerts.
+
 ### Backup and reset
 
 Stop the application before copying the database for a consistent manual

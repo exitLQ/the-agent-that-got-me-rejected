@@ -1136,7 +1136,7 @@ wheels = [
 
 [[package]]
 name = "jupyterlab"
-version = "4.6.1"
+version = "4.6.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "async-lru" },
@@ -1153,9 +1153,9 @@ dependencies = [
     { name = "tornado" },
     { name = "traitlets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bc/2a/d6af53bfd45a43a5bfe7e40ba47ee7a8921a807daf4bb708e3a295bbb54d/jupyterlab-4.6.1.tar.gz", hash = "sha256:75315982ed28427edaa62bb85eadb5105e4043a757643c910efd787fe6ed0837", size = 28179125, upload-time = "2026-06-29T12:48:45.402Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/7f/51c0c856ab286bdaf5709cf61ed13584ed9d4bee906479707da45b11b353/jupyterlab-4.6.2.tar.gz", hash = "sha256:e18ce8b34f3de350e93cd5b2c4f3ae884cbe266eb76bf5d6825a4ed34c13bcff", size = 28183650, upload-time = "2026-07-21T12:05:24.051Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/81/90ac6cc31d248e83a0d1eab343a5e6e68bc783d3f74fbe61640f42a61da4/jupyterlab-4.6.1-py3-none-any.whl", hash = "sha256:85a58546c831f3dce6cf919468c26874c9065e99c42279fb4abb8e1b552a98bb", size = 17164660, upload-time = "2026-06-29T12:48:41.21Z" },
+    { url = "https://files.pythonhosted.org/packages/63/1f/e39b248c76bb3736bc05a9491a6aa1315414c32dea12f548ecc1b24c758e/jupyterlab-4.6.2-py3-none-any.whl", hash = "sha256:5964447036629adfcd3fc0969effc1da6f47d2cbd0a60b2c2eea7c31be0ec6a8", size = 17166703, upload-time = "2026-07-21T12:05:19.818Z" },
 ]
 
 [[package]]
@@ -2034,7 +2034,7 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "8.4.2"
+version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -2043,9 +2043,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01", size = 1519618, upload-time = "2025-09-04T14:34:22.711Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79", size = 365750, upload-time = "2025-09-04T14:34:20.226Z" },
+    { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
 ]
 
 [[package]]
@@ -2523,6 +2523,7 @@ ollama = [
 [package.dev-dependencies]
 dev = [
     { name = "jupyter" },
+    { name = "jupyterlab" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-mock" },
@@ -2554,8 +2555,9 @@ provides-extras = ["groq", "ollama", "cloud"]
 [package.metadata.requires-dev]
 dev = [
     { name = "jupyter", specifier = ">=1.1" },
+    { name = "jupyterlab", specifier = ">=4.6.2,<5" },
     { name = "pre-commit", specifier = ">=4" },
-    { name = "pytest", specifier = ">=8,<9" },
+    { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-mock", specifier = ">=3.14" },
     { name = "respx", specifier = ">=0.21" },
     { name = "ruff", specifier = ">=0.8" },

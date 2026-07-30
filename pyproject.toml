@@ -25,12 +25,15 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=8,<9",
+    # 9.0.3 fixes insecure UNIX tmpdir handling (CVE-2025-71176).
+    "pytest>=9.0.3,<10",
     "pytest-mock>=3.14",
     "respx>=0.21",
     "ruff>=0.8",
     "pre-commit>=4",
     "jupyter>=1.1",
+    # 4.6.2 fixes the July 2026 settings, image-viewer, and extension-manager advisories.
+    "jupyterlab>=4.6.2,<5",
 ]
 
 [project.optional-dependencies]
