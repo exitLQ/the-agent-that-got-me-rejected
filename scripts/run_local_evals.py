@@ -8,10 +8,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
-from job_scout.evals import LocalEvaluationDataset, evaluate_dataset
+from job_scout.evals import (
+    LocalJsonDatasetSource,
+    LocalJsonReportSink,
+    run_evaluation,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = ROOT / "reports" / "local_evaluation.json"
@@ -19,18 +22,11 @@ DEFAULT_OUTPUT = ROOT / "reports" / "local_evaluation.json"
 
 def run(input_path: Path, output_path: Path) -> dict:
     """Validate, evaluate, and write one privacy-minimized stable report."""
-    if input_path.resolve() == output_path.resolve():
-        raise ValueError("The evaluation output must not overwrite its input dataset.")
-    raw = json.loads(input_path.read_text(encoding="utf-8"))
-    dataset = LocalEvaluationDataset.model_validate(raw)
-    report = evaluate_dataset(dataset)
-    payload = report.model_dump(mode="json")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
+    evaluation = run_evaluation(
+        LocalJsonDatasetSource(input_path),
+        LocalJsonReportSink(output_path),
     )
-    return payload
+    return evaluation.report.model_dump(mode="json")
 
 
 def print_summary(payload: dict) -> None:

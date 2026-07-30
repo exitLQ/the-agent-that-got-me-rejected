@@ -479,6 +479,52 @@ warnings. Its scores verify the evaluator itself; they are not a quality claim
 about a real model or a production run. Subjective judges and external
 evaluation interfaces remain separate and optional.
 
+### Version 0.4.0 development: optional evaluation interfaces
+
+The ninth application-tailoring step introduces a narrow adapter boundary for
+future evaluation integrations without enabling one. Two Python protocols in
+`job_scout.evals.interfaces` define the complete surface:
+
+- `EvaluationDatasetSource` loads a typed `LocalEvaluationDataset`; and
+- `EvaluationReportSink` receives only a privacy-minimized
+  `LocalEvaluationReport`.
+
+Every adapter declares a stable name and whether it is external. The central
+`run_evaluation` function inspects both declarations before calling either
+adapter. If a source or sink is external, the run is rejected before any load,
+model, network, or publish operation unless the immediate caller passes
+`confirm_external=True`. Confirmation is per call, is not stored, and cannot
+be supplied through `.env`. This is an integration boundary for future code,
+not general consent to upload CVs or application drafts.
+
+Only two local adapters ship:
+
+- `LocalJsonDatasetSource` reads the versioned JSON dataset; and
+- `LocalJsonReportSink` atomically replaces a local report through a temporary
+  sibling file.
+
+The existing `scripts/run_local_evals.py` command now uses these adapters and
+still performs no network operation. It rejects identical input and output
+paths before loading the dataset. A successful sink returns a typed
+`PublishReceipt` containing only its destination name, boundary flag, dataset
+digest, and case counts. The orchestrator rejects a receipt whose digest,
+destination, or external-boundary declaration disagrees with the requested
+run.
+
+An external sink can receive only the minimized deterministic report through
+this interface. Raw profiles, corpus statements, cover letters, rewritten
+bullets, validator warning text, credentials, and tracker notes are not part of
+the sink method. An external dataset source could still return sensitive case
+inputs after confirmation, so its own privacy policy and storage boundary must
+be reviewed before installation.
+
+No Opik dataset adapter, annotation-queue adapter, subjective LLM judge, or
+judge-calibration implementation is included or registered. Adding one later
+requires a separate dependency, explicit construction by the caller, the
+per-call external confirmation, and tests for its privacy and receipt
+contract. The application and CLI never discover or activate third-party
+adapters automatically.
+
 ### July 2026 development-dependency security update
 
 The locked development environment now requires JupyterLab `4.6.2` or newer

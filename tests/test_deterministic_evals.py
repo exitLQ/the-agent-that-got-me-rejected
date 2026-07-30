@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from job_scout.evals import LocalEvaluationDataset, evaluate_dataset
+from job_scout.evals import (
+    EvaluationInterfaceError,
+    LocalEvaluationDataset,
+    evaluate_dataset,
+)
 from scripts.run_local_evals import run
 
 FIXTURE = Path("data/evaluation/local_fixture.json")
@@ -110,5 +114,5 @@ def test_cli_runner_writes_byte_stable_privacy_minimized_report(tmp_path):
 
 
 def test_cli_runner_refuses_to_overwrite_its_input():
-    with pytest.raises(ValueError, match="must not overwrite"):
+    with pytest.raises(EvaluationInterfaceError, match="must not overwrite"):
         run(FIXTURE, FIXTURE)

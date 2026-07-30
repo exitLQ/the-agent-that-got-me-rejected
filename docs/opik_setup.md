@@ -69,3 +69,10 @@ Opik datasets, evaluation rules, LLM judges, and annotation workflows are not
 required for the local application. Add them only when an external
 observability workflow is explicitly needed and its data-transfer boundary has
 been reviewed.
+
+The codebase exposes optional `EvaluationDatasetSource` and
+`EvaluationReportSink` protocols, but no Opik implementation ships or registers
+itself. A future Opik adapter must declare itself external and can run only
+after the caller supplies per-run confirmation. A report sink receives the
+minimized deterministic report, not profile values, corpus evidence, cover
+letters, or warning text.

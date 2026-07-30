@@ -431,6 +431,17 @@ The fixture's fixed 50 percent fabrication rate is intentional: its one
 tailoring case has two synthetic warnings among four checked claims. It is a
 regression test for metric calculation, not a model-quality baseline.
 
+The command uses the built-in `LocalJsonDatasetSource` and
+`LocalJsonReportSink`. These are the only evaluation adapters included in the
+project. The report is written atomically, and a typed receipt verifies its
+dataset digest and local boundary.
+
+Future integrations can implement the source or sink protocols, but
+`run_evaluation` blocks every adapter declaring `is_external=True` before any
+adapter method is called. A caller must pass `confirm_external=True` for that
+single run. The CLI has no switch for external adapters, does not load plugins,
+and remains local-only.
+
 ### Ranking concurrency
 
 Ranking uses batches of five jobs and up to two concurrent model requests by
