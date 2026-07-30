@@ -347,6 +347,28 @@ result cards to inspect:
 The footer also shows the total query count. Repeated, overly long, empty, or
 URL-containing model output is rejected automatically.
 
+### Preparing and reviewing an application draft
+
+The application page is never entered automatically:
+
+1. Select one job under `Prepare an application`. The selector starts empty.
+2. Read the local or external model disclosure.
+3. Tick the confirmation for this one tailoring run.
+4. Press `Prepare application draft`.
+
+Changing the job clears the confirmation. The configured
+`SCOUT_TAILOR_MODEL` is independent of the search model. A cloud tailoring
+model requires `OFFLINE_MODE=false`, `CLOUD_LLM_ENABLED=true`, and its matching
+API key.
+
+The fourth page shows a copyable cover letter, addressed requirements, CV
+rewrite suggestions, exact cited CV statements, selected skills, an honesty
+note, and the complete deterministic warning report. A zero-warning report is
+not proof that every statement is true. Read the draft and its evidence before
+using it. `Back to jobs` keeps the search results but requires a new
+confirmation. `Start over` clears all temporary candidate and draft state but
+does not delete saved application-tracker records.
+
 ### Ranking concurrency
 
 Ranking uses batches of five jobs and up to two concurrent model requests by

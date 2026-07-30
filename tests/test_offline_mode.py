@@ -62,3 +62,17 @@ def test_ui_css_has_no_external_font_import():
     assert "fonts.googleapis.com" not in CSS
     assert "@import url(" not in CSS
     assert THEME._stylesheets == []
+
+
+def test_theme_fonts_are_launch_compatible_gradio_objects():
+    """Gradio launch compares custom and built-in themes through Font.__eq__."""
+    built_in = [
+        THEME.__class__(),
+    ]
+
+    for theme in built_in:
+        assert isinstance(THEME.to_dict() == theme.to_dict(), bool)
+    assert all(
+        font.stylesheet() == {"url": None, "css": None}
+        for font in THEME._font  # noqa: SLF001 - regression for Gradio's launch internals
+    )

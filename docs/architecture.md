@@ -9,7 +9,7 @@ flowchart TB
   U(["User"]) -->|"upload CV (PDF)"| UI
 
   subgraph UI_L["Gradio UI · app.py"]
-    UI["3-step wizard<br/>session model → Resume → Profile → Jobs<br/>provider status · streamed progress · fit gauges"]
+    UI["4-step wizard<br/>Resume → Profile → Jobs → Application review<br/>explicit selection + one-run confirmation"]
   end
 
   UI -->|"filepath"| CVR["cv_reader.py<br/>pypdf: PDF → text"]
@@ -17,6 +17,7 @@ flowchart TB
   CVR -->|"transient CV text"| COR["corpus.py<br/>typed addressable facts<br/>session memory only"]
   CVR -->|"delete temporary UI copy"| DEL["privacy.py<br/>temp-boundary deletion"]
   EP -->|"Profile"| RUN
+  UI -->|"confirmed job + session state"| RUN
 
   subgraph ORCH["runner.py · orchestrator (UI + batch share it)"]
     RUN["stream_search / stream_tailoring / run_once<br/>measures cost + latency · streams node status"]
@@ -51,7 +52,7 @@ flowchart TB
   LOC --> RJ
 
   E -->|"RankedJobs or tailoring report"| RUN
-  RUN -->|"ranked cards + cost/latency + Opik link"| UI
+  RUN -->|"ranked cards or draft + evidence + all warnings"| UI
   UI -->|"selected job + status + notes"| DB["applications.py<br/>local SQLite tracker"]
   DB -->|"saved application overview"| UI
 
@@ -171,5 +172,12 @@ flowchart TB
     typed report with counts, warnings, ratios, and the exact configured
     thresholds without copying source corpus text into checkpointed state. It
     makes no LLM call and does not automatically repair or reject the draft.
-    The Gradio UI does not call this branch until the later explicit-selection
-    step is implemented.
+13. **Explicit Gradio handoff.** The tailoring selector starts empty and a
+    separate checkbox confirms one specific run. Changing the job or returning
+    to results clears confirmation. Only after the server verifies the selected
+    ID, profile, corpus, and dedicated model does the UI call
+    `stream_tailoring`. The review page renders the copyable cover letter, every
+    source-linked rewrite and skill, the honesty note, and every validator flag.
+    A clean report remains labelled as a heuristic result, not a proof. Reset
+    clears all temporary tailoring state and starts a fresh trace thread while
+    leaving the local application tracker untouched.

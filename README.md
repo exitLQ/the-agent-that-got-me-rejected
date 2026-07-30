@@ -26,8 +26,9 @@ job applications.
 - Optional live search through JSearch, Adzuna, and Remotive
 - Bounded concurrent job-fit ranking with a transparent hybrid score
 - Evidence-backed matched skills and technology gaps
+- Explicitly confirmed, source-linked application drafts with visible warnings
 - Local SQLite application tracker with status and private notes
-- Gradio web interface
+- Four-step Gradio web interface
 - Optional Opik tracing
 - Offline fallback data for development and testing
 - Guardrails for loop count and LLM-call budget
@@ -290,14 +291,75 @@ Flags are warnings for human review, not proof that a claim is false. Honest
 paraphrases can fall below a threshold, while a small invented detail inside an
 otherwise copied sentence can still pass. Multiple cited facts are checked as
 one ordered source combination, but reordered or heavily compressed truthful
-claims may still be flagged. The later Gradio step must display every warning
-and must not describe a clean report as a guarantee of truth.
+claims may still be flagged. The following Gradio step displays every warning
+and does not describe a clean report as a guarantee of truth.
 
 The temporary corpus remains in run-scoped `AgentContext`; it is not added to
 checkpointed graph state. The report itself can be checkpointed and traced, but
 contains only generated claims, corpus identifiers, ratios, reasons, counts,
-and threshold values. The Gradio interface still does not invoke tailoring at
-this stage.
+and threshold values. At this fifth development step, the Gradio interface did
+not invoke tailoring yet.
+
+### Version 0.4.0 development: fourth Gradio wizard step
+
+The sixth application-tailoring step exposes the grounded pipeline through a
+fourth wizard page. The complete interactive flow is now:
+
+1. upload a PDF and choose the extraction/search model;
+2. review the extracted profile;
+3. run the search, inspect ranked jobs, and select exactly one job for
+   tailoring; and
+4. review the generated application material, its source evidence, honesty
+   note, and every deterministic validator warning.
+
+The tailoring dropdown deliberately has no default selection even though the
+application-tracker dropdown may preselect the highest-ranked job. The user
+must choose one job and tick a one-run confirmation checkbox. Changing the job
+or returning from the review page clears that confirmation. A forged or stale
+job identifier is checked against the current ranked results on the server and
+is rejected before model readiness is checked.
+
+The results page states which dedicated model will process tailoring data.
+With Ollama, it explains that the selected job and temporary corpus stay with
+the local Ollama service. With OpenAI, Anthropic, xAI, or Groq, it names the
+external provider and explains that the selected job and temporary CV corpus
+will be transferred only after confirmation. The configured cloud-consent
+gate, online-mode requirement, and matching API key are still enforced. The
+search selector does not silently replace `SCOUT_TAILOR_MODEL`.
+
+Neither model validation nor `stream_tailoring` runs before all of these checks
+pass:
+
+- one current ranked job is selected;
+- the one-run confirmation is checked;
+- the current structured profile is valid;
+- the temporary corpus is non-empty; and
+- `SCOUT_TAILOR_MODEL` is ready under the existing local/cloud policy.
+
+The Tailoring page displays:
+
+- a copyable, read-only cover-letter draft;
+- each addressed job requirement;
+- every suggested CV rewrite;
+- the model's reason for each rewrite;
+- every cited corpus identifier and its exact source statement beside the
+  rewrite;
+- every selected skill and its exact source statement;
+- the mandatory honesty note; and
+- every fabrication warning with claim type, location, generated text,
+  references, reason, similarity ratio, claim count, and thresholds.
+
+A zero-flag report explicitly says that the result is not a guarantee of truth.
+If no validation report exists, the page tells the user not to use the draft.
+All generated and source-derived values are HTML-escaped before rendering.
+Private application-tracker notes are not inputs to the callback or runner.
+
+`Back to jobs` preserves the current search but invalidates the previous
+confirmation. `Start over` clears the profile, ranked jobs, temporary corpus,
+draft, report, selection, and confirmation, and creates a fresh trace thread.
+Saved SQLite tracker entries remain untouched. PDF download is intentionally
+deferred to step seven; this step supplies only the cover-letter copy action
+and the complete on-screen review.
 
 ### July 2026 development-dependency security update
 
@@ -1770,7 +1832,9 @@ The interface uses a local CSS font stack. `Public Sans` is used only when it is
 already installed on the device, followed by the operating system's sans-serif
 fonts. The application does not create a Google Fonts stylesheet or make a font
 request during startup. The offline UI test verifies that both the custom CSS
-and the generated Gradio theme contain no external font stylesheet.
+and the generated Gradio theme contain no external font stylesheet. The stack
+uses stylesheet-free `gr.themes.Font` objects so Gradio's launch-time theme
+comparison remains type-safe.
 
 ### 3. Accurate tracing status
 

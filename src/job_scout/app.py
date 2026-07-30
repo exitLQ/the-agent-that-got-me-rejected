@@ -1,10 +1,12 @@
 """Gradio UI for the-agent-that-got-me-rejected.
 
-A three-step wizard with a refined editorial look: warm-paper background with a
+A four-step wizard with a refined editorial look: warm-paper background with a
 faint gradient-and-grain wash, a display serif (Fraunces) paired with a mono for
 data (IBM Plex Mono), emerald accent. The flow is (1) drop your resume,
 (2) review the extracted profile, (3) find jobs — ranked as cards with a
-conic-gauge fit score, matched-skill chips, and honest gaps.
+conic-gauge fit score, matched-skill chips, and honest gaps, and (4) explicitly
+select one job and review a source-linked application draft plus every
+deterministic validator warning.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from job_scout.applications import (
     get_application_store,
 )
 from job_scout.config import get_settings
-from job_scout.corpus import build_candidate_corpus
+from job_scout.corpus import CorpusItem, build_candidate_corpus
 from job_scout.graph.schemas import Profile, RankedJob, SkillEvidence
 from job_scout.llm import (
     ModelConfigurationError,
@@ -34,7 +36,12 @@ from job_scout.llm import (
 )
 from job_scout.privacy import delete_temporary_upload
 from job_scout.profile import extract_profile
-from job_scout.runner import RunResult, stream_search
+from job_scout.runner import (
+    RunResult,
+    TailoringResult,
+    stream_search,
+    stream_tailoring,
+)
 from job_scout.tools.cv_reader import CVReadError, extract_cv_text
 from job_scout.tools.jobs_api import CacheSource
 from job_scout.tracing import opik_url, register_prompts
@@ -49,6 +56,7 @@ ranked by fit, with the gaps shown honestly.</p>
   <li><span class="js-num">1</span><div><b>Drop your resume</b> (PDF) below.</div></li>
   <li><span class="js-num">2</span><div>We <b>read it</b> and show your skills, experience, and locations.</div></li>
   <li><span class="js-num">3</span><div>Hit <b>Find jobs</b> to get openings ranked by fit.</div></li>
+  <li><span class="js-num">4</span><div>Select one job and <b>review a grounded application draft</b>.</div></li>
 </ol>
 """
 
@@ -56,7 +64,12 @@ THEME = gr.themes.Soft(
     primary_hue=gr.themes.colors.emerald,
     secondary_hue=gr.themes.colors.stone,
     neutral_hue=gr.themes.colors.stone,
-    font=("Public Sans", "ui-sans-serif", "system-ui", "sans-serif"),
+    font=(
+        gr.themes.Font("Public Sans"),
+        gr.themes.Font("ui-sans-serif"),
+        gr.themes.Font("system-ui"),
+        gr.themes.Font("sans-serif"),
+    ),
     radius_size=gr.themes.sizes.radius_md,
 ).set(
     body_background_fill="#FBFAF8",
@@ -232,6 +245,27 @@ body::after {
 .js-query-audit ol { margin: 7px 0 0; padding-left: 20px; }
 .js-query-audit li { margin: 5px 0; line-height: 1.45; }
 
+/* --- Tailoring review --- */
+.js-pack { display: flex; flex-direction: column; gap: 14px; }
+.js-tailored-list { display: flex; flex-direction: column; gap: 12px; }
+.js-tailored-item { border: 1px solid var(--border-color-primary); border-radius: 12px;
+  padding: 14px 16px; background: var(--block-background-fill); }
+.js-tailored-item p { margin: 5px 0; line-height: 1.5; }
+.js-source-text { color: var(--body-text-color-subdued); font-size: 0.84rem; }
+.js-ref { display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 0.67rem;
+  color: var(--js-accent); background: rgba(14,110,74,0.09); border-radius: 5px;
+  padding: 2px 6px; margin: 2px 5px 2px 0; }
+.js-honesty { border-left: 3px solid #D97706; background: rgba(217,119,6,0.07);
+  border-radius: 0 12px 12px 0; padding: 12px 16px; font-size: 0.9rem; line-height: 1.55; }
+.js-fab-ok { border: 1px solid rgba(14,110,74,0.35); background: rgba(14,110,74,0.06);
+  border-radius: 12px; padding: 12px 16px; font-size: 0.88rem; }
+.js-fab-warn { border: 1px solid rgba(217,119,6,0.45); background: rgba(217,119,6,0.07);
+  border-radius: 12px; padding: 12px 16px; font-size: 0.88rem; }
+.js-fab-warn b, .js-honesty b { color: #B45309; }
+.js-fab-warn ol { margin: 9px 0 0; padding-left: 1.3em; }
+.js-fab-warn li { margin: 7px 0; line-height: 1.5; }
+.js-fab-reason { display: block; color: var(--body-text-color-subdued); font-size: 0.8rem; }
+
 /* --- Fit gauge --- */
 .js-fit-ring { --size: 56px; width: var(--size); height: var(--size); flex: none;
   border-radius: 50%; display: grid; place-items: center; position: relative;
@@ -289,8 +323,8 @@ _MARK = (
 
 
 def _stepper(active: int) -> str:
-    """Render the 3-step progress indicator with ``active`` (1-3) highlighted."""
-    labels = ("Resume", "Profile", "Jobs")
+    """Render the 4-step progress indicator with ``active`` (1-4) highlighted."""
+    labels = ("Resume", "Profile", "Jobs", "Application")
     items = []
     for i, label in enumerate(labels, 1):
         state = "done" if i < active else "active" if i == active else "todo"
@@ -503,6 +537,157 @@ def _footer_html(result: RunResult) -> str:
     return f'<div class="js-footer">{body}</div>'
 
 
+def _fabrication_html(result: TailoringResult) -> str:
+    """Render every deterministic warning without claiming a proof of truth."""
+    report = result.fabrication_report
+    if report is None:
+        return (
+            '<div class="js-fab-warn"><b>Validation report unavailable.</b> '
+            "Do not use this draft until its claims have been checked.</div>"
+        )
+    thresholds = (
+        f"bullet {report.thresholds['bullet']:.2f}, "
+        f"skill {report.thresholds['skill']:.2f}, "
+        f"letter {report.thresholds['letter']:.2f}"
+    )
+    if report.flags == 0:
+        return (
+            '<div class="js-fab-ok"><b>No claims were flagged by the deterministic checks.</b> '
+            f"{report.claims_checked} claims checked at {escape(thresholds)}. "
+            "This is not a guarantee of truth; review the draft before using it.</div>"
+        )
+    items = []
+    for flag in report.flagged:
+        refs = " ".join(
+            f'<span class="js-ref">{escape(ref)}</span>'
+            for ref in flag.corpus_refs
+        )
+        refs_html = f"<br>{refs}" if refs else ""
+        items.append(
+            f"<li><b>{escape(flag.claim_type.replace('_', ' '))}</b> "
+            f"at <span class=\"js-ref\">{escape(flag.where)}</span>: "
+            f"{escape(flag.text)}{refs_html}"
+            f'<span class="js-fab-reason">{escape(flag.reason)} '
+            f"(best ratio {flag.best_match_ratio:.3f})</span></li>"
+        )
+    return (
+        f'<div class="js-fab-warn"><b>{report.flags} of '
+        f"{report.claims_checked} checked claims require review.</b> "
+        "Warnings are not hidden and do not prove that a statement is false. "
+        f"Thresholds: {escape(thresholds)}."
+        f'<ol>{"".join(items)}</ol></div>'
+    )
+
+
+def _source_evidence_html(
+    references: list[str],
+    corpus_by_id: dict[str, CorpusItem],
+) -> str:
+    """Render every cited source item beside a generated suggestion."""
+    rows = []
+    for reference in references:
+        item = corpus_by_id.get(reference)
+        source = item.text if item is not None else "Source item is unavailable."
+        rows.append(
+            f'<p class="js-source-text"><span class="js-ref">{escape(reference)}</span> '
+            f"{escape(source)}</p>"
+        )
+    return "".join(rows)
+
+
+def _tailoring_html(
+    result: TailoringResult,
+    corpus: list[CorpusItem],
+) -> str:
+    """Render grounded suggestions, source evidence, honesty note, and warnings."""
+    if result.tailoring is None:
+        why = "; ".join(result.errors) or result.error_message or "unknown error"
+        return (
+            '<div class="js-empty"><div><b>Could not prepare this application.</b>'
+            f"<p>{escape(why)}</p></div></div>"
+        )
+
+    pack = result.tailoring
+    corpus_by_id = {item.item_id: item for item in corpus}
+    requirements = "".join(
+        f"<li>{escape(requirement)}</li>"
+        for requirement in pack.addressed_requirements
+    )
+    bullets = []
+    for bullet in pack.tailored_bullets:
+        bullets.append(
+            '<div class="js-tailored-item">'
+            f"<p><b>Suggested rewrite</b><br>{escape(bullet.text)}</p>"
+            f"<p class=\"js-source-text\"><b>Why</b><br>{escape(bullet.reason)}</p>"
+            f"{_source_evidence_html(bullet.corpus_refs, corpus_by_id)}"
+            "</div>"
+        )
+    skills = []
+    for skill in pack.selected_skills:
+        skills.append(
+            '<div class="js-tailored-item">'
+            f"<p><b>{escape(skill.name)}</b></p>"
+            f"{_source_evidence_html([skill.corpus_ref], corpus_by_id)}"
+            "</div>"
+        )
+    skill_section = (
+        '<p class="js-section-label">Source-linked skills</p>'
+        f'<div class="js-tailored-list">{"".join(skills)}</div>'
+        if skills
+        else ""
+    )
+    return (
+        '<div class="js-pack">'
+        f"{_fabrication_html(result)}"
+        '<p class="js-section-label">Requirements addressed</p>'
+        f'<div class="js-card"><ul>{requirements}</ul></div>'
+        '<p class="js-section-label">CV rewrite suggestions and sources</p>'
+        f'<div class="js-tailored-list">{"".join(bullets)}</div>'
+        f"{skill_section}"
+        f'<div class="js-honesty"><b>Honesty note</b><br>{escape(pack.honesty_note)}</div>'
+        "</div>"
+    )
+
+
+def _tailor_footer_html(result: TailoringResult) -> str:
+    """Render tailoring metadata without exposing trace links when disabled."""
+    settings = get_settings()
+    provider = model_provider(result.model)
+    execution = (
+        f"external model: {escape(provider)}"
+        if provider and provider != "ollama"
+        else "local model: Ollama"
+    )
+    if settings.has_opik:
+        trace = (
+            f'<a href="{result.opik_url or opik_url()}" '
+            'target="_blank" rel="noopener">view traces in Opik ↗</a>'
+        )
+    else:
+        trace = "tracing: disabled"
+    if result.failed:
+        return (
+            '<div class="js-footer">run failed · '
+            f"{escape(result.error_message)} · {trace} · {execution}</div>"
+        )
+    cost = (
+        f"${result.cost_usd:.4f}"
+        if result.cost_estimate_available
+        else "cost: check provider dashboard"
+    )
+    flags = (
+        result.fabrication_report.flags
+        if result.fabrication_report is not None
+        else "unavailable"
+    )
+    return (
+        '<div class="js-footer">'
+        f'<span class="js-meta-mono">{escape(cost)}</span> · '
+        f'<span class="js-meta-mono">{result.latency_s}s</span> · '
+        f"validator warnings: {flags} · {trace} · {execution}</div>"
+    )
+
+
 def _status(text: str, error: bool = False) -> str:
     """Render a status line on the start page."""
     cls = "js-status js-status-err" if error else "js-status"
@@ -688,6 +873,24 @@ def _cloud_warning_html(model: str) -> str:
     )
 
 
+def _tailor_transfer_html(model: str) -> str:
+    """Explain exactly where selected job and corpus content will be processed."""
+    provider = model_provider(model)
+    if provider and provider != "ollama":
+        return (
+            '<div class="js-card js-status-err"><b>External tailoring model.</b> '
+            f"After confirmation, the selected job and temporary CV corpus are sent to "
+            f"{escape(provider)} using <span class=\"js-meta-mono\">{escape(model)}</span>. "
+            "Private tracker notes, API keys, the original PDF, and other jobs are not sent.</div>"
+        )
+    return (
+        '<div class="js-card"><b>Local tailoring model.</b> '
+        "After confirmation, the selected job and temporary CV corpus are processed "
+        f"by local Ollama using <span class=\"js-meta-mono\">{escape(model)}</span>. "
+        "Private tracker notes are not used.</div>"
+    )
+
+
 def _provider_status_html(provider: str, model_name: str) -> str:
     """Render non-secret readiness and data-transfer status for one selection."""
     try:
@@ -757,14 +960,31 @@ def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: 
 def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
     """Step 2 → 3: run the job-finding graph for the extracted profile and stream results.
 
-    Outputs include page visibility, rendered results, selectable jobs, and state.
+    Outputs include page visibility, rendered results, both job selectors, and state.
     """
     go = gr.update(visible=False), gr.update(visible=True)
     if profile is None:
-        yield (gr.update(visible=True), gr.update(visible=False), gr.update(), "", gr.update(), [])
+        yield (
+            gr.update(visible=True),
+            gr.update(visible=False),
+            gr.update(),
+            "",
+            gr.update(),
+            [],
+            gr.update(),
+            False,
+        )
         return
 
-    yield (*go, _loading_html("Searching for jobs…"), "", gr.update(), gr.update())
+    yield (
+        *go,
+        _loading_html("Searching for jobs…"),
+        "",
+        gr.update(),
+        gr.update(),
+        gr.update(),
+        False,
+    )
     result = RunResult()
     for kind, payload in stream_search(
         profile,
@@ -773,7 +993,15 @@ def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
         model_name=model_name,
     ):
         if kind == "status":
-            yield (*go, _loading_html(str(payload)), "", gr.update(), gr.update())
+            yield (
+                *go,
+                _loading_html(str(payload)),
+                "",
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                False,
+            )
         elif kind == "result":
             result = payload  # type: ignore[assignment]
 
@@ -788,16 +1016,149 @@ def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
         _footer_html(result),
         gr.update(choices=choices, value=selected),
         result.ranked_jobs,
+        gr.update(choices=choices, value=None, interactive=bool(choices)),
+        False,
+    )
+
+
+def on_tailor(
+    profile: Profile | dict | None,
+    ranked_jobs: list[RankedJob] | list[dict] | None,
+    candidate_corpus: list[CorpusItem] | list[dict] | None,
+    selected_job_id: str | None,
+    confirmed: bool,
+    thread_id: str,
+):
+    """Step 3 → 4 after explicit selection and one-run data-transfer consent."""
+    stay = gr.update(visible=True), gr.update(visible=False)
+    go = gr.update(visible=False), gr.update(visible=True)
+    unchanged = (gr.update(), gr.update(), gr.update(), gr.update())
+
+    if not selected_job_id:
+        yield (*stay, *unchanged, _status("Select one job before tailoring.", error=True))
+        return
+    if not confirmed:
+        yield (
+            *stay,
+            *unchanged,
+            _status("Confirm this specific tailoring run before any job or CV content is processed.", error=True),
+        )
+        return
+    try:
+        parsed_profile = (
+            profile
+            if isinstance(profile, Profile)
+            else Profile.model_validate(profile)
+        )
+        parsed_jobs = [
+            item if isinstance(item, RankedJob) else RankedJob.model_validate(item)
+            for item in (ranked_jobs or [])
+        ]
+        parsed_corpus = [
+            item if isinstance(item, CorpusItem) else CorpusItem.model_validate(item)
+            for item in (candidate_corpus or [])
+        ]
+    except Exception:  # noqa: BLE001 - corrupted session state must remain local
+        yield (
+            *stay,
+            *unchanged,
+            _status("Tailoring session data is invalid. Start over and upload the resume again.", error=True),
+        )
+        return
+    if not any(item.job.job_id == selected_job_id for item in parsed_jobs):
+        yield (
+            *stay,
+            *unchanged,
+            _status("The selected job is no longer available in this search.", error=True),
+        )
+        return
+    if not parsed_corpus:
+        yield (
+            *stay,
+            *unchanged,
+            _status("The temporary CV corpus is unavailable. Upload the resume again.", error=True),
+        )
+        return
+
+    model_name = get_settings().scout_tailor_model
+    try:
+        validate_model_configuration(model_name)
+    except (ModelConfigurationError, OllamaRuntimeError) as exc:
+        yield (
+            *stay,
+            *unchanged,
+            _status(f"Tailoring model is not ready: {exc}", error=True),
+        )
+        return
+
+    yield (
+        *go,
+        _loading_html("Preparing the application draft…"),
+        "",
+        "",
+        None,
+        "",
+    )
+    result = TailoringResult(
+        selected_job_id=selected_job_id,
+        model=model_name,
+    )
+    for kind, payload in stream_tailoring(
+        parsed_profile,
+        parsed_jobs,
+        parsed_corpus,
+        selected_job_id=selected_job_id,
+        thread_id=thread_id,
+        tags=["phase-2", "ui", "tailor"],
+        model_name=model_name,
+    ):
+        if kind == "status":
+            yield (
+                *go,
+                _loading_html(str(payload)),
+                "",
+                "",
+                None,
+                "",
+            )
+        elif kind == "result":
+            result = payload  # type: ignore[assignment]
+
+    cover_letter = result.tailoring.cover_letter if result.tailoring else ""
+    yield (
+        *go,
+        _tailoring_html(result, parsed_corpus),
+        cover_letter,
+        _tailor_footer_html(result),
+        result,
+        "",
+    )
+
+
+def on_tailor_job_change():
+    """A new selection requires a new explicit confirmation."""
+    return False, ""
+
+
+def back_to_jobs():
+    """Return to ranked jobs and invalidate the previous confirmation."""
+    return (
+        gr.update(visible=True),
+        gr.update(visible=False),
+        False,
+        "",
     )
 
 
 def reset():
     """Return to step 1 and clear the wizard.
 
-    Outputs include page visibility, cleared content, and temporary session state.
+    Outputs include all four pages, cleared content, a fresh thread, and
+    temporary session state.
     """
     return (
         gr.update(visible=True),
+        gr.update(visible=False),
         gr.update(visible=False),
         gr.update(visible=False),
         None,
@@ -809,11 +1170,19 @@ def reset():
         gr.update(choices=[], value=None),
         [],
         [],
+        gr.update(choices=[], value=None),
+        False,
+        "",
+        "",
+        "",
+        "",
+        None,
+        str(uuid4()),
     )
 
 
 def build_app() -> gr.Blocks:
-    """Build the three-step wizard app."""
+    """Build the four-step wizard app."""
     register_prompts()
     settings = get_settings()
     mode_caption = "Offline mode: local model and cache only" if settings.offline_mode else CAPTION
@@ -828,6 +1197,7 @@ def build_app() -> gr.Blocks:
         selected_model_state = gr.State(None)
         ranked_jobs_state = gr.State([])
         corpus_state = gr.State([])
+        tailoring_result_state = gr.State(None)
 
         gr.HTML(
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>the-agent-that-got-me-rejected</h1></div>'
@@ -893,6 +1263,23 @@ def build_app() -> gr.Blocks:
             gr.HTML('<p class="js-section-label">Ranked jobs</p>')
             results_out = gr.HTML()
             footer_out = gr.HTML()
+            gr.HTML('<p class="js-section-label" style="margin-top:16px">Prepare an application</p>')
+            tailor_job_input = gr.Dropdown(
+                choices=[],
+                value=None,
+                label="Select exactly one ranked job",
+                interactive=True,
+            )
+            gr.HTML(_tailor_transfer_html(settings.scout_tailor_model))
+            tailor_consent_input = gr.Checkbox(
+                value=False,
+                label=(
+                    "I selected this job and confirm this one tailoring run. "
+                    "I understand where the selected job and temporary CV corpus will be processed."
+                ),
+            )
+            tailor_btn = gr.Button("Prepare application draft", variant="primary", size="lg")
+            tailor_status = gr.HTML()
             with gr.Accordion("Save to application tracker", open=False):
                 result_job_input = gr.Dropdown(
                     choices=[],
@@ -913,6 +1300,20 @@ def build_app() -> gr.Blocks:
                 save_application_btn = gr.Button("Save application", variant="primary")
                 save_application_status = gr.HTML()
             restart_btn = gr.Button("Start over", variant="secondary")
+
+        with gr.Group(visible=False) as page_tailor:
+            gr.HTML(_stepper(4))
+            gr.HTML('<p class="js-section-label">Application review</p>')
+            tailor_out = gr.HTML()
+            cover_letter_out = gr.Textbox(
+                label="Cover letter draft",
+                lines=14,
+                interactive=False,
+                buttons=["copy"],
+            )
+            tailor_footer = gr.HTML()
+            back_btn = gr.Button("Back to jobs", variant="secondary")
+            restart_btn_tailor = gr.Button("Start over", variant="secondary")
 
         provider_input.change(
             on_provider_change,
@@ -947,6 +1348,41 @@ def build_app() -> gr.Blocks:
                 footer_out,
                 result_job_input,
                 ranked_jobs_state,
+                tailor_job_input,
+                tailor_consent_input,
+            ],
+        )
+        tailor_job_input.change(
+            on_tailor_job_change,
+            outputs=[tailor_consent_input, tailor_status],
+        )
+        tailor_btn.click(
+            on_tailor,
+            inputs=[
+                profile_state,
+                ranked_jobs_state,
+                corpus_state,
+                tailor_job_input,
+                tailor_consent_input,
+                thread_id,
+            ],
+            outputs=[
+                page_results,
+                page_tailor,
+                tailor_out,
+                cover_letter_out,
+                tailor_footer,
+                tailoring_result_state,
+                tailor_status,
+            ],
+        )
+        back_btn.click(
+            back_to_jobs,
+            outputs=[
+                page_results,
+                page_tailor,
+                tailor_consent_input,
+                tailor_status,
             ],
         )
         tracked_job_input.change(
@@ -996,6 +1432,7 @@ def build_app() -> gr.Blocks:
             page_start,
             page_profile,
             page_results,
+            page_tailor,
             cv_file,
             start_status,
             results_out,
@@ -1005,9 +1442,18 @@ def build_app() -> gr.Blocks:
             result_job_input,
             ranked_jobs_state,
             corpus_state,
+            tailor_job_input,
+            tailor_consent_input,
+            tailor_status,
+            tailor_out,
+            cover_letter_out,
+            tailor_footer,
+            tailoring_result_state,
+            thread_id,
         ]
         change_btn.click(reset, outputs=reset_outputs)
         restart_btn.click(reset, outputs=reset_outputs)
+        restart_btn_tailor.click(reset, outputs=reset_outputs)
 
     return demo
 
