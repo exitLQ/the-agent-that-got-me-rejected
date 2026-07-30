@@ -83,6 +83,37 @@ creating a duplicate. Notes are trimmed and limited to 2,000 characters.
 Removing a record affects only that selected job and does not delete a source
 PDF or any other saved application.
 
+### Version 0.4.0 development: temporary CV corpus
+
+The first application-tailoring foundation is implemented but does not yet
+generate application documents. Immediately after a PDF is read, the UI builds
+a typed, addressable corpus from the transient resume text. Each item has:
+
+- a deterministic session identifier such as `cv-experience-001`;
+- one of the `summary`, `skill`, `experience`, or `education` kinds;
+- the normalized CV-derived text; and
+- an explicit `cv` source marker.
+
+English and German section headings are recognized. Obvious wrapped summary,
+skill, and bullet lines are joined, while comma-separated skills become
+individual facts. Email addresses, web addresses, and phone-number-like values
+with at least nine digits are removed before an item enters the corpus. Year
+ranges such as `2021-2026` are preserved. Content before the first recognized
+section is omitted, which normally excludes the candidate name and contact
+header. For a headerless resume, the first non-empty line is conservatively
+treated as the preamble and omitted.
+
+The corpus exists only in the current Gradio session. It is not written to the
+application SQLite database, LangGraph state, Opik, logs, or a repository file.
+The original unsegmented CV text is still cleared after profile extraction, and
+`Start over` clears the corpus state. A process or browser-session restart also
+removes it.
+
+This step deliberately exposes no tailoring button yet. Later development
+steps will require generated claims to reference these item identifiers. The
+separation keeps the parsing and privacy boundary independently testable before
+any model receives corpus content.
+
 ### Backup and reset
 
 Stop the application before copying the database for a consistent manual

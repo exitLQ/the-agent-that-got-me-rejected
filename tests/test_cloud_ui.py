@@ -96,14 +96,18 @@ def test_upload_rejects_blocked_provider_before_reading_resume(monkeypatch):
 
     assert len(events) == 1
     assert "Model is not ready: blocked" in events[0][3]
-    assert events[0][4:] == (None, None)
+    assert events[0][4:] == (None, None, None)
 
 
 def test_upload_keeps_selected_model_in_session_state(monkeypatch, sample_profile):
     captured = {}
     monkeypatch.setattr(app, "get_settings", lambda: SimpleNamespace(privacy_mode=False))
     monkeypatch.setattr(app, "validate_model_configuration", lambda model: "anthropic")
-    monkeypatch.setattr(app, "extract_cv_text", lambda path: "synthetic resume")
+    monkeypatch.setattr(
+        app,
+        "extract_cv_text",
+        lambda path: "Test Candidate\ntest@example.com\nSkills\nPython, SQL",
+    )
 
     def fake_extract(cv_text, **kwargs):
         captured.update(kwargs)
@@ -115,6 +119,7 @@ def test_upload_keeps_selected_model_in_session_state(monkeypatch, sample_profil
 
     assert events[-1][4] is sample_profile
     assert events[-1][5] == "anthropic:claude-sonnet-4-6"
+    assert [item.text for item in events[-1][6]] == ["Python", "SQL"]
     assert captured["model_name"] == "anthropic:claude-sonnet-4-6"
 
 

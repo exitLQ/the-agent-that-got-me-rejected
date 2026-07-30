@@ -18,6 +18,7 @@ flowchart TB
 
   UI -->|"filepath"| CVR["cv_reader.py<br/>pypdf: PDF → text"]
   CVR -->|"transient CV text"| EP["profile.py · extract_profile<br/>1 LLM call · structured output"]
+  CVR -->|"transient CV text"| COR["corpus.py<br/>typed addressable facts<br/>session memory only"]
   CVR -->|"delete temporary UI copy"| DEL["privacy.py<br/>temp-boundary deletion"]
   EP -->|"Profile"| RUN
 
@@ -129,3 +130,9 @@ flowchart TB
    tracker does not persist CV text, candidate profiles, prompts, model output,
    or credentials. `Start over` clears the wizard session but deliberately
    leaves saved applications intact.
+8. **Temporary CV corpus.** During upload, `corpus.py` segments the transient CV
+   text into deterministic `summary`, `skill`, `experience`, and `education`
+   items. It removes direct contact channels and the usual preamble before the
+   items enter Gradio session state. The corpus is not placed in LangGraph,
+   SQLite, traces, or logs. It is cleared by `Start over` and will provide the
+   addressable evidence contract for the later tailoring and validation nodes.

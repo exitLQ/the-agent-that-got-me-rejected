@@ -22,6 +22,7 @@ from job_scout.applications import (
     get_application_store,
 )
 from job_scout.config import get_settings
+from job_scout.corpus import build_candidate_corpus
 from job_scout.graph.schemas import Profile, RankedJob, SkillEvidence
 from job_scout.llm import (
     ModelConfigurationError,
@@ -710,13 +711,13 @@ def on_provider_change(provider: str):
 def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: str):
     """Step 1 → 2: read the resume, extract the profile, and reveal the profile page.
 
-    Outputs: page visibility, profile HTML, status, profile state, and model state.
+    Outputs include page visibility, profile, model, and temporary corpus state.
     """
     stay = gr.update(visible=True), gr.update(visible=False)
     go = gr.update(visible=False), gr.update(visible=True)
 
     if not file_path:
-        yield (*stay, gr.update(), _status("Please drop a PDF resume.", error=True), None, None)
+        yield (*stay, gr.update(), _status("Please drop a PDF resume.", error=True), None, None, None)
         return
     try:
         selected_model = qualify_model(provider, model_name)
@@ -724,18 +725,19 @@ def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: 
     except (ModelConfigurationError, OllamaRuntimeError) as exc:
         if get_settings().privacy_mode:
             delete_temporary_upload(file_path)
-        yield (*stay, gr.update(), _status(f"Model is not ready: {exc}", error=True), None, None)
+        yield (*stay, gr.update(), _status(f"Model is not ready: {exc}", error=True), None, None, None)
         return
     try:
         cv_text = extract_cv_text(file_path)
     except CVReadError as exc:
-        yield (*stay, gr.update(), _status(f"Could not read that PDF: {exc}", error=True), None, None)
+        yield (*stay, gr.update(), _status(f"Could not read that PDF: {exc}", error=True), None, None, None)
         return
     finally:
         if get_settings().privacy_mode:
             delete_temporary_upload(file_path)
 
-    yield (*go, _loading_html("Reading your resume…"), "", gr.update(), selected_model)
+    corpus = build_candidate_corpus(cv_text)
+    yield (*go, _loading_html("Reading your resume…"), "", gr.update(), selected_model, gr.update())
     try:
         profile = extract_profile(
             cv_text,
@@ -745,10 +747,11 @@ def on_upload(file_path: str | None, thread_id: str, provider: str, model_name: 
         )
     except Exception as exc:  # noqa: BLE001 - show a friendly error and return to start
         cv_text = ""
-        yield (*stay, gr.update(), _status(f"Couldn't read a profile: {exc}", error=True), None, None)
+        corpus = []
+        yield (*stay, gr.update(), _status(f"Couldn't read a profile: {exc}", error=True), None, None, None)
         return
     cv_text = ""
-    yield (*go, _profile_html(profile), "", profile, selected_model)
+    yield (*go, _profile_html(profile), "", profile, selected_model, corpus)
 
 
 def on_find(profile: Profile | None, thread_id: str, model_name: str | None):
@@ -805,6 +808,7 @@ def reset():
         None,
         gr.update(choices=[], value=None),
         [],
+        [],
     )
 
 
@@ -823,6 +827,7 @@ def build_app() -> gr.Blocks:
         profile_state = gr.State(None)
         selected_model_state = gr.State(None)
         ranked_jobs_state = gr.State([])
+        corpus_state = gr.State([])
 
         gr.HTML(
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>the-agent-that-got-me-rejected</h1></div>'
@@ -922,7 +927,15 @@ def build_app() -> gr.Blocks:
         cv_file.upload(
             on_upload,
             inputs=[cv_file, thread_id, provider_input, model_input],
-            outputs=[page_start, page_profile, profile_out, start_status, profile_state, selected_model_state],
+            outputs=[
+                page_start,
+                page_profile,
+                profile_out,
+                start_status,
+                profile_state,
+                selected_model_state,
+                corpus_state,
+            ],
         )
         find_btn.click(
             on_find,
@@ -991,6 +1004,7 @@ def build_app() -> gr.Blocks:
             selected_model_state,
             result_job_input,
             ranked_jobs_state,
+            corpus_state,
         ]
         change_btn.click(reset, outputs=reset_outputs)
         restart_btn.click(reset, outputs=reset_outputs)
