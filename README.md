@@ -191,7 +191,8 @@ are converted into bounded state errors, and an attempted provider call is
 counted even when it fails. This prevents a tailoring failure from crashing the
 future wizard while preserving budget accounting.
 
-Contextual fabrication checks are still pending. This node guarantees the
+At this third development step, contextual fabrication checks were still
+pending. The node guarantees the
 strict output shape but does not yet prove that a cited corpus item exists or
 supports a generated claim. The deterministic validator in step five will
 provide that decision, so the current node remains unreachable from the
@@ -228,11 +229,75 @@ bounded graph failures, and the final typed `TailoringPack`. It reuses the
 current trace thread with a `tailor` tag, but does not attach the CV or place
 corpus contents in trace metadata.
 
-The Gradio interface still exposes only the existing search workflow at this
-stage. The connected tailoring route is an internal, tested capability; no job
-text is sent for tailoring until a later wizard step obtains an explicit user
-selection. The deterministic fabrication validator remains the next required
-gate before any generated application material is displayed.
+At this fourth development step, the Gradio interface still exposed only the
+existing search workflow. The connected tailoring route was an internal,
+tested capability; no job text could be sent for tailoring until a later
+wizard step obtained an explicit user selection. The deterministic fabrication
+validator remained the next required gate before generated material could be
+displayed.
+
+### Version 0.4.0 development: deterministic fabrication validator
+
+The fifth application-tailoring step adds `validate_tailoring` immediately
+after `tailor`:
+
+```text
+START -> tailor -> validate_tailoring -> END
+```
+
+The node calls no model, consumes no token budget, performs no retry, and never
+silently repairs generated text. It runs the same checks in the same order for
+the same pack, corpus, job, and thresholds. If generation failed and no pack
+exists, validation is skipped without hiding the original generation error.
+
+The validator checks four claim groups:
+
+1. Every tailored CV bullet must resolve all cited corpus identifiers. Its
+   normalized text must remain sufficiently similar to at least one cited item
+   or to their ordered combination.
+2. Every selected skill must resolve its exact cited item. A complete normalized
+   skill phrase inside a longer experience item counts as direct support;
+   otherwise normalized similarity is used.
+3. Every addressed requirement must be traceable to the selected job title,
+   company, location, tags, or bounded description. This prevents the pack from
+   claiming that it addressed a requirement the posting never stated.
+4. Factual-looking cover-letter sentences are checked against the corpus and
+   job context. A sentence is considered factual when it has at least six words
+   and contains a digit, an acronym, or a multi-word capitalized name. A
+   first-person sentence can be grounded only by the candidate corpus, not by
+   copied job text. Greetings, sign-offs, and purely motivational prose are
+   skipped because this deterministic checker cannot verify them.
+
+Text is case-folded, punctuation is removed, whitespace is collapsed, and
+similarity is calculated with Python's deterministic `SequenceMatcher`.
+Thresholds are validated in the inclusive range `0..1`:
+
+| Variable | Default | Applies to |
+|---|---:|---|
+| `SCOUT_FAB_BULLET_RATIO` | `0.65` | Rewritten CV bullets |
+| `SCOUT_FAB_SKILL_RATIO` | `0.85` | Selected skills |
+| `SCOUT_FAB_LETTER_RATIO` | `0.55` | Job requirements and factual letter sentences |
+
+Higher values are stricter and normally create more warnings. Every
+`FabricationReport` records the exact thresholds used, the number of checked
+claims, and one typed `FlaggedClaim` per claim requiring review. A flag includes
+the generated text, location, reason, cited identifiers, and best similarity
+ratio. It does not copy the referenced corpus item's text into the report.
+Reports are returned through graph state and the tailoring runner, which also
+streams the checked and flagged counts.
+
+Flags are warnings for human review, not proof that a claim is false. Honest
+paraphrases can fall below a threshold, while a small invented detail inside an
+otherwise copied sentence can still pass. Multiple cited facts are checked as
+one ordered source combination, but reordered or heavily compressed truthful
+claims may still be flagged. The later Gradio step must display every warning
+and must not describe a clean report as a guarantee of truth.
+
+The temporary corpus remains in run-scoped `AgentContext`; it is not added to
+checkpointed graph state. The report itself can be checkpointed and traced, but
+contains only generated claims, corpus identifiers, ratios, reasons, counts,
+and threshold values. The Gradio interface still does not invoke tailoring at
+this stage.
 
 ### July 2026 development-dependency security update
 
@@ -431,7 +496,7 @@ providers do not trigger a request to the local Ollama endpoint.
 | Variable | Default | Description |
 |---|---|---|
 | `SCOUT_MODEL` | `ollama:qwen3:8b` | Main extraction, tool-calling, and ranking model |
-| `SCOUT_TAILOR_MODEL` | `ollama:qwen3:8b` | Reserved tailoring model |
+| `SCOUT_TAILOR_MODEL` | `ollama:qwen3:8b` | Dedicated application-tailoring model |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_HEALTH_TIMEOUT` | `3` | Startup health-check timeout in seconds |
 
@@ -1782,6 +1847,7 @@ Important environment variables:
 | Variable | Purpose | Required |
 |---|---|---|
 | `SCOUT_MODEL` | Model used for extraction, search decisions, and ranking | Yes |
+| `SCOUT_TAILOR_MODEL` | Model used only for application tailoring | No |
 | `OLLAMA_BASE_URL` | Local Ollama service URL | For Ollama |
 | `OLLAMA_HEALTH_TIMEOUT` | Ollama startup-check timeout | No |
 | `RANK_MAX_WORKERS` | Maximum concurrent ranking requests, from 1 to 8 | No |
@@ -1797,6 +1863,9 @@ Important environment variables:
 | `ADZUNA_APP_ID` | Enables Adzuna with `ADZUNA_APP_KEY` | No |
 | `ADZUNA_APP_KEY` | Enables Adzuna with `ADZUNA_APP_ID` | No |
 | `MAX_LLM_CALLS_PER_RUN` | Per-run LLM circuit breaker | No |
+| `SCOUT_FAB_BULLET_RATIO` | Deterministic CV-bullet similarity threshold | No |
+| `SCOUT_FAB_SKILL_RATIO` | Deterministic selected-skill similarity threshold | No |
+| `SCOUT_FAB_LETTER_RATIO` | Deterministic job and letter similarity threshold | No |
 | `APPLICATION_DB_PATH` | Local SQLite application-tracker path | No |
 
 Never commit `.env` or API keys.

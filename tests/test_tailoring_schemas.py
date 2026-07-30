@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from job_scout.graph.schemas import TailoredBullet, TailoredSkill, TailoringPack
+from job_scout.graph.schemas import (
+    FabricationReport,
+    TailoredBullet,
+    TailoredSkill,
+    TailoringPack,
+)
 
 
 def _valid_pack(**updates) -> TailoringPack:
@@ -130,4 +135,22 @@ def test_unknown_model_fields_are_rejected():
                 "corpus_ref": "cv-skill-001",
                 "unsupported_claim": "invented",
             }
+        )
+
+
+def test_fabrication_report_requires_consistent_counts_and_thresholds():
+    with pytest.raises(ValidationError, match="flags must equal"):
+        FabricationReport(
+            flags=1,
+            claims_checked=1,
+            flagged=[],
+            thresholds={"bullet": 0.65, "skill": 0.85, "letter": 0.55},
+        )
+
+    with pytest.raises(ValidationError, match="must contain"):
+        FabricationReport(
+            flags=0,
+            claims_checked=0,
+            flagged=[],
+            thresholds={"bullet": 0.65, "skill": 0.85},
         )

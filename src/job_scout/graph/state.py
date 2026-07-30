@@ -7,6 +7,7 @@ from typing import TypedDict
 
 from job_scout.corpus import CorpusItem
 from job_scout.graph.schemas import (
+    FabricationReport,
     JobPosting,
     Profile,
     QueryReformulation,
@@ -29,7 +30,9 @@ class AgentState(TypedDict, total=False):
     ``total=False`` lets nodes return partial updates and lets the initial invoke
     payload set only the fields it has. ``llm_calls``, ``errors`` and
     ``jobs_sources`` back the call budget, non-crashing error handling and trace
-    metadata respectively. ``tailoring`` and ``selected_job_id`` are Phase 2.
+    metadata respectively. Tailoring state includes the explicit job selection,
+    generated pack, and deterministic fabrication report. The source corpus is
+    deliberately absent and exists only in ``AgentContext``.
     """
 
     profile: Profile | None
@@ -48,4 +51,5 @@ class AgentState(TypedDict, total=False):
     errors: list[str]
     jobs_sources: list[str]
     tailoring: TailoringPack | None
+    fabrication_report: FabricationReport | None
     selected_job_id: str | None

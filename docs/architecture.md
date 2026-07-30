@@ -29,14 +29,16 @@ flowchart TB
     S((START)) --> ENTRY{"selected_job_id<br/>present?"}
     ENTRY -->|"no"| FJ
     ENTRY -->|"yes"| TA["tailor<br/>strict TailoringPack<br/>dedicated model"]
+    TA --> VAL["validate_tailoring<br/>deterministic claim checks<br/>typed FabricationReport"]
     FJ["fetch_jobs<br/>LLM picks search args via tool call"] --> RJ
     RJ["rank_jobs<br/>5-job batches · bounded concurrent workers<br/>deterministic aggregation · hybrid score"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
     D -->|"no · under 2 loops"| RQ["reformulate_query<br/>quality feedback · validation · history<br/>deterministic fallback when needed"]
     RQ --> FJ
     D -->|"yes · or cap hit"| E((END))
-    TA --> E
+    VAL --> E
   end
   COR -. "AgentContext<br/>runtime only" .-> TA
+  COR -. "reference lookup<br/>runtime only" .-> VAL
 
   FJ -->|"query · country · remote"| SRCH
   subgraph SRCH["run_search · jobs_api.py"]
@@ -48,7 +50,7 @@ flowchart TB
   SRCH -->|"JobPostings"| LOC["location gate<br/>exact city → remote scope → same country<br/>known mismatches removed"]
   LOC --> RJ
 
-  E -->|"RankedJobs"| RUN
+  E -->|"RankedJobs or tailoring report"| RUN
   RUN -->|"ranked cards + cost/latency + Opik link"| UI
   UI -->|"selected job + status + notes"| DB["applications.py<br/>local SQLite tracker"]
   DB -->|"saved application overview"| UI
@@ -79,7 +81,7 @@ flowchart TB
   classDef node fill:#fff7e6,stroke:#b06000,color:#111;
   class OA,LLM_L llm;
   class TR,PL,AT,OBS obs;
-  class FJ,RJ,RQ,TA node;
+  class FJ,RJ,RQ,TA,VAL node;
 ```
 
 ## Reading it
@@ -136,17 +138,18 @@ flowchart TB
 8. **Temporary CV corpus.** During upload, `corpus.py` segments the transient CV
    text into deterministic `summary`, `skill`, `experience`, and `education`
    items. It removes direct contact channels and the usual preamble before the
-   items enter Gradio session state. The corpus is not placed in LangGraph,
-   SQLite, traces, or logs. It is cleared by `Start over` and will provide the
-   addressable evidence contract for the later tailoring and validation nodes.
+   items enter Gradio session state. The corpus travels through LangGraph only
+   as runtime `AgentContext`; it is not placed in graph state, checkpoints,
+   SQLite, or logs. It is cleared by `Start over` and provides the addressable
+   evidence contract for tailoring and validation.
 9. **Strict tailoring contracts.** `TailoredBullet`, `TailoredSkill`, and
    `TailoringPack` define the only accepted shape for future generated
    application material. Bullets and skills require syntactically valid corpus
    references; the pack requires a selected job, at least two distinct
    requirements, an honesty note, and a cover letter capped at 350 words.
    Unknown fields and normalized duplicates are rejected. These are structural
-   guarantees only: the later validator must still resolve references against
-   the session corpus and compare requirements with the selected job.
+   guarantees only; the following deterministic node resolves references
+   against the session corpus and compares requirements with the selected job.
 10. **Tailoring node.** `tailor_application` validates the selected job,
     profile, session corpus, and call budget before invoking the dedicated
     tailoring model. `AgentContext` carries the corpus as a run dependency so it
@@ -155,9 +158,18 @@ flowchart TB
     as untrusted content. The node returns a strict `TailoringPack` or a bounded
     error and rejects packs for another job.
 11. **Entry isolation.** Search explicitly passes `selected_job_id=None` and
-    `tailoring=None`, while `stream_tailoring` explicitly passes the current
-    profile, ranked jobs, and selection. The latter carries the temporary corpus
-    and dedicated model only through `AgentContext`. Consequently a checkpoint
-    cannot silently select a job, retain an older draft, or persist the corpus.
+    clears both `tailoring` and `fabrication_report`, while `stream_tailoring`
+    explicitly passes the current profile, ranked jobs, and selection. The
+    latter carries the temporary corpus and dedicated model only through
+    `AgentContext`. Consequently a checkpoint cannot silently select a job,
+    retain an older draft, or persist the corpus.
+12. **Deterministic validation.** `validate_tailoring` always follows successful
+    or failed generation. With a pack, it resolves cited corpus identifiers,
+    measures normalized bullet and skill similarity, verifies addressed
+    requirements against the job, and checks factual-looking cover-letter
+    sentences. First-person letter claims can use only CV evidence. It returns a
+    typed report with counts, warnings, ratios, and the exact configured
+    thresholds without copying source corpus text into checkpointed state. It
+    makes no LLM call and does not automatically repair or reject the draft.
     The Gradio UI does not call this branch until the later explicit-selection
     step is implemented.

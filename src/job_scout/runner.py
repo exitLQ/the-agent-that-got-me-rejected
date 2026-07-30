@@ -17,6 +17,7 @@ from job_scout.config import get_settings
 from job_scout.corpus import CorpusItem
 from job_scout.graph.graph import build_graph
 from job_scout.graph.schemas import (
+    FabricationReport,
     Profile,
     QueryReformulation,
     RankedJob,
@@ -37,6 +38,7 @@ _NODE_STATUS = {
     "rank_jobs": "ranking jobs…",
     "reformulate_query": "broadening the search…",
     "tailor": "preparing application draft…",
+    "validate_tailoring": "checking application claims…",
 }
 
 
@@ -73,6 +75,7 @@ class TailoringResult:
     selected_job_id: str = ""
     model: str = ""
     tailoring: TailoringPack | None = None
+    fabrication_report: FabricationReport | None = None
     errors: list[str] = field(default_factory=list)
     cost_usd: float = 0.0
     cost_estimate_available: bool = False
@@ -122,6 +125,7 @@ def stream_search(
         "profile": profile,
         "selected_job_id": None,
         "tailoring": None,
+        "fabrication_report": None,
         "model": selected_model,
     }
     config = {"configurable": {"thread_id": thread_id}, "callbacks": callbacks, "recursion_limit": 25}
@@ -191,6 +195,7 @@ def stream_tailoring(
         "ranked_jobs": ranked_jobs,
         "selected_job_id": selected_job_id,
         "tailoring": None,
+        "fabrication_report": None,
         "errors": [],
         "llm_calls": 0,
     }
@@ -221,6 +226,7 @@ def stream_tailoring(
 
         final = graph.get_state(config).values
         result.tailoring = final.get("tailoring")
+        result.fabrication_report = final.get("fabrication_report")
         result.errors = final.get("errors", [])
     except Exception as exc:  # noqa: BLE001 - return one stable runner result
         result.failed = True
@@ -251,6 +257,14 @@ def _status_line(node_name: str, update: dict) -> str:
             "application draft prepared"
             if update.get("tailoring")
             else "application draft could not be prepared"
+        )
+    if node_name == "validate_tailoring":
+        report = update.get("fabrication_report")
+        if report is None:
+            return "application claim check skipped"
+        return (
+            f"checked {report.claims_checked} claims… "
+            f"{report.flags} require review"
         )
     return _NODE_STATUS.get(node_name, f"{node_name}…")
 

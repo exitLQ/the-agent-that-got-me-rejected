@@ -169,3 +169,47 @@ class TailoringPack(_StrictTailoringModel):
         if len(skill_names) != len(set(skill_names)):
             raise ValueError("selected_skills must not contain duplicate names")
         return self
+
+
+ClaimType = Literal["cv_bullet", "skill", "job_requirement", "cover_letter"]
+ThresholdName = Literal["bullet", "skill", "letter"]
+
+
+class FlaggedClaim(_StrictTailoringModel):
+    """One generated claim the deterministic validator could not ground."""
+
+    claim_type: ClaimType
+    where: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=5000)
+    reason: str = Field(min_length=1, max_length=500)
+    corpus_refs: list[CorpusReference] = Field(default_factory=list, max_length=3)
+    best_match_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class FabricationReport(_StrictTailoringModel):
+    """Deterministic evidence report for a generated tailoring pack."""
+
+    flags: int = Field(ge=0)
+    claims_checked: int = Field(ge=0)
+    flagged: list[FlaggedClaim] = Field(default_factory=list)
+    thresholds: dict[ThresholdName, float]
+
+    @field_validator("thresholds")
+    @classmethod
+    def _require_complete_thresholds(
+        cls,
+        value: dict[ThresholdName, float],
+    ) -> dict[ThresholdName, float]:
+        if set(value) != {"bullet", "skill", "letter"}:
+            raise ValueError("thresholds must contain bullet, skill, and letter")
+        if any(threshold < 0.0 or threshold > 1.0 for threshold in value.values()):
+            raise ValueError("thresholds must be between 0 and 1")
+        return value
+
+    @model_validator(mode="after")
+    def _require_consistent_counts(self) -> FabricationReport:
+        if self.flags != len(self.flagged):
+            raise ValueError("flags must equal the number of flagged claims")
+        if self.flags > self.claims_checked:
+            raise ValueError("flags must not exceed claims_checked")
+        return self

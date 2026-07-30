@@ -10,7 +10,12 @@ from types import SimpleNamespace
 
 import job_scout.runner as runner_mod
 from job_scout.corpus import CorpusItem
-from job_scout.graph.schemas import JobPosting, RankedJob, TailoringPack
+from job_scout.graph.schemas import (
+    FabricationReport,
+    JobPosting,
+    RankedJob,
+    TailoringPack,
+)
 from job_scout.graph.state import AgentContext
 from job_scout.runner import run_once, stream_search, stream_tailoring
 
@@ -54,6 +59,7 @@ def test_search_passes_profile_and_nulls_selected_job_id(monkeypatch, sample_pro
     assert fake.captured_inputs["profile"] is sample_profile
     assert fake.captured_inputs["selected_job_id"] is None
     assert fake.captured_inputs["tailoring"] is None
+    assert fake.captured_inputs["fabrication_report"] is None
     assert "cv_text" not in fake.captured_inputs
 
 
@@ -121,6 +127,12 @@ def _tailoring_pack() -> TailoringPack:
 class _FakeTailoringGraph:
     def __init__(self, pack):
         self.pack = pack
+        self.report = FabricationReport(
+            flags=0,
+            claims_checked=2,
+            flagged=[],
+            thresholds={"bullet": 0.65, "skill": 0.85, "letter": 0.55},
+        )
         self.captured_inputs = None
         self.captured_config = None
         self.captured_context = None
@@ -129,10 +141,21 @@ class _FakeTailoringGraph:
         self.captured_inputs = inputs
         self.captured_config = config
         self.captured_context = context
-        return iter([{"tailor": {"tailoring": self.pack, "errors": []}}])
+        return iter(
+            [
+                {"tailor": {"tailoring": self.pack, "errors": []}},
+                {"validate_tailoring": {"fabrication_report": self.report}},
+            ]
+        )
 
     def get_state(self, config):
-        return SimpleNamespace(values={"tailoring": self.pack, "errors": []})
+        return SimpleNamespace(
+            values={
+                "tailoring": self.pack,
+                "fabrication_report": self.report,
+                "errors": [],
+            }
+        )
 
 
 def test_tailoring_runner_passes_explicit_state_and_runtime_only_corpus(
@@ -164,9 +187,11 @@ def test_tailoring_runner_passes_explicit_state_and_runtime_only_corpus(
     )
 
     assert events[0] == ("status", "application draft prepared")
+    assert events[1] == ("status", "checked 2 claims… 0 require review")
     assert events[-1][0] == "result"
     result = events[-1][1]
     assert result.tailoring == pack
+    assert result.fabrication_report == fake.report
     assert result.model == "ollama:tailor-test"
     assert result.failed is False
 
@@ -174,6 +199,7 @@ def test_tailoring_runner_passes_explicit_state_and_runtime_only_corpus(
     assert fake.captured_inputs["ranked_jobs"][0].job.job_id == "job-1"
     assert fake.captured_inputs["selected_job_id"] == "job-1"
     assert fake.captured_inputs["tailoring"] is None
+    assert fake.captured_inputs["fabrication_report"] is None
     assert "candidate_corpus" not in fake.captured_inputs
     assert "candidate_corpus" not in fake.captured_config
     assert fake.captured_context == AgentContext(

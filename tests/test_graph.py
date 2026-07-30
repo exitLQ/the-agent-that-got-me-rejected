@@ -44,7 +44,12 @@ def test_compiled_graph_routes_selection_with_runtime_only_context(
         seen["context"] = runtime.context
         return {"errors": ["tailor route reached"]}
 
+    def fake_validator(state, runtime: Runtime[AgentContext]):
+        seen["validator_context"] = runtime.context
+        return {"errors": [*state["errors"], "validator route reached"]}
+
     monkeypatch.setattr(graph_mod, "tailor_application", fake_tailor)
+    monkeypatch.setattr(graph_mod, "validate_tailoring", fake_validator)
     graph = build_graph()
     config = {"configurable": {"thread_id": "tailor-route-test"}}
     final = graph.invoke(
@@ -59,7 +64,8 @@ def test_compiled_graph_routes_selection_with_runtime_only_context(
 
     assert seen["selected_job_id"] == "x"
     assert seen["context"].candidate_corpus == corpus
-    assert final["errors"] == ["tailor route reached"]
+    assert seen["validator_context"].candidate_corpus == corpus
+    assert final["errors"] == ["tailor route reached", "validator route reached"]
     assert "candidate_corpus" not in graph.get_state(config).values
 
 

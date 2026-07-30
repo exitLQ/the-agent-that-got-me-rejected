@@ -9,9 +9,9 @@ on finding jobs:
                                                |
                                               END
 
-With an explicit selected job it enters the isolated application branch:
+With an explicit selected job it enters the grounded application branch:
 
-    START -> tailor -> END
+    START -> tailor -> validate_tailoring -> END
 
 The conditional edge after ranking is what makes this an agent rather than a
 straight-line workflow: if too few strong matches came back, it loops through
@@ -32,6 +32,7 @@ from job_scout.graph.nodes.fetch_jobs import fetch_jobs
 from job_scout.graph.nodes.rank_jobs import rank_jobs
 from job_scout.graph.nodes.reformulate_query import reformulate_query
 from job_scout.graph.nodes.tailor import tailor_application
+from job_scout.graph.nodes.validate_tailoring import validate_tailoring
 from job_scout.graph.state import AgentContext, AgentState
 
 GOOD_FIT_THRESHOLD = 60
@@ -65,6 +66,7 @@ def build_graph(checkpointer: MemorySaver | None = None):
     builder.add_node("rank_jobs", rank_jobs)
     builder.add_node("reformulate_query", reformulate_query)
     builder.add_node("tailor", tailor_application)
+    builder.add_node("validate_tailoring", validate_tailoring)
 
     builder.add_conditional_edges(
         START,
@@ -74,6 +76,7 @@ def build_graph(checkpointer: MemorySaver | None = None):
     builder.add_edge("fetch_jobs", "rank_jobs")
     builder.add_conditional_edges("rank_jobs", should_reformulate, ["reformulate_query", END])
     builder.add_edge("reformulate_query", "fetch_jobs")
-    builder.add_edge("tailor", END)
+    builder.add_edge("tailor", "validate_tailoring")
+    builder.add_edge("validate_tailoring", END)
 
     return builder.compile(checkpointer=checkpointer or MemorySaver())
